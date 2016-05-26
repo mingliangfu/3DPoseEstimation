@@ -36,6 +36,8 @@ vector<string> models = {"ape","benchvise","bowl","cam","can","cat", "cup","dril
 
 unordered_map<string,int> model_index;
 string LINEMOD_path = "/media/zsn/Storage/BMC/Master/Implementation/dataset/";
+string hdf5_path = "/media/zsn/Storage/BMC/Master/Implementation/Wadim/build/debug/hdf5/";
+string network_path = "/media/zsn/Storage/BMC/Master/Implementation/Wadim/network/";
 
 
 struct Frame
@@ -495,7 +497,7 @@ void createSceneSamplesAndTemplates(string seq)
     //vector<Sample> sceneSamples = extractSceneSamplesWadim(bench.frames,bench.cam,model_index[seq]);
 
 
-    //writeHDF5("scenesamples_" + seq +".h5", sceneSamples);
+    //writeHDF5(hfd5_path + "scenesamples_" + seq +".h5", sceneSamples);
 
     //    for (Sample &s : sceneSamples) showRGBDPatch(s.data);
 
@@ -504,10 +506,9 @@ void createSceneSamplesAndTemplates(string seq)
     //vector<Sample> templates = createTemplatesPaul(model,bench.cam,model_index[seq]);
     vector<Sample> templates = createTemplatesWadim(model,bench.cam,model_index[seq]);
 
-    writeHDF5("tempwadim_" + seq + ".h5", templates);
+    writeHDF5(hdf5_path + "tempwadim_" + seq + ".h5", templates);
 
     //for (Sample &s : templates) showRGBDPatch(s.data);
-
 
 }
 
@@ -525,8 +526,8 @@ void buildTriplets(vector<string> used_models)
     vector< vector<Sample> > templates, scene_samples;
     for (string &seq : used_models)
     {
-        scene_samples.push_back(readHDF5("scenesamples_" + seq + ".h5"));
-        templates.push_back(readHDF5("tempwadim_" + seq + ".h5"));
+        scene_samples.push_back(readHDF5(hdf5_path + "scenesamples_" + seq + ".h5"));
+        templates.push_back(readHDF5(hdf5_path + "tempwadim_" + seq + ".h5"));
     }
 
     // Read quaternion poses from scene samples
@@ -675,7 +676,7 @@ void buildTriplets(vector<string> used_models)
 
     // Since Caffe's HDF5Layer has a weird memory restriction, we chunk the training data into 1GB files
     // We also make sure that the chunk is divisible by 192 (i.e. a batch size that is fully divisible by 3)
-    ofstream train("train_files.txt");
+    ofstream train(hdf5_path + "train_files.txt");
     vector<Sample> out;
     int chunk_counter=0;
     for (Triplet &tri : triplets)
@@ -689,7 +690,7 @@ void buildTriplets(vector<string> used_models)
         int byte_size = out.size()*(img_data + label_data)*sizeof(float);
         if ((out.size() % 192 == 0) && (byte_size > 1024*1024*1024))
         {
-            string filename = "train_chunk"+to_string(chunk_counter)+".h5";
+            string filename = hdf5_path + "train_chunk"+to_string(chunk_counter)+".h5";
             writeHDF5(filename,out);
             train << filename << endl;
             out.clear();
@@ -726,9 +727,9 @@ void trainNet()
     solver_param.set_snapshot_prefix("manifold");
 
     solver_param.set_display(1);
-    solver_param.set_net("manifold_train.prototxt");
+    solver_param.set_net(network_path + "manifold_train.prototxt");
     caffe::SGDSolver<float> *solver = new caffe::SGDSolver<float>(solver_param);
-    string resume = "manifold_iter_50000.solverstate";
+    string resume = network_path + "manifold_iter_50000.solverstate";
     //    solver->Solve(resume);
     solver->Solve();
 }
@@ -786,15 +787,15 @@ Mat computeDescriptors(caffe::Net<float> &CNN, vector<Sample> samples)
 void testNet()
 {
     caffe::Caffe::set_mode(caffe::Caffe::CPU);
-    caffe::Net<float> CNN("manifold_test.prototxt", caffe::TEST);
-    CNN.CopyTrainedLayersFrom("manifold_iter_25000.caffemodel");
+    caffe::Net<float> CNN(network_path + "manifold_test.prototxt", caffe::TEST);
+    CNN.CopyTrainedLayersFrom(network_path + "manifold_iter_25000.caffemodel");
     
-    vector<Sample> ape = readHDF5("templates_ape.h5");
+    vector<Sample> ape = readHDF5(hdf5_path + "templates_ape.h5");
     ape.resize(301);
     Mat ape_descs = computeDescriptors(CNN,ape);
 
 
-    vector<Sample> driller = readHDF5("templates_driller.h5");
+    vector<Sample> driller = readHDF5(hdf5_path + "templates_driller.h5");
     driller.resize(301);
     Mat driller_descs = computeDescriptors(CNN,driller);
 
@@ -831,11 +832,11 @@ void testKNN(bool realData)
 
     // Load the snapshot
     caffe::Caffe::set_mode(caffe::Caffe::CPU);
-    caffe::Net<float> CNN("manifold_test.prototxt", caffe::TEST);
-    CNN.CopyTrainedLayersFrom("manifold_iter_25000.caffemodel");
+    caffe::Net<float> CNN(network_path + "manifold_test.prototxt", caffe::TEST);
+    CNN.CopyTrainedLayersFrom(network_path + "manifold_iter_25000.caffemodel");
 
     // Read the templates, compute the descriptors and store them to DB
-    vector<Sample> ape = readHDF5("templates_ape.h5");
+    vector<Sample> ape = readHDF5(hdf5_path + "templates_ape.h5");
     ape.resize(301);
     Mat DBfeats = computeDescriptors(CNN,ape);
 
@@ -844,7 +845,7 @@ void testKNN(bool realData)
     model.loadPLY(LINEMOD_path + seq + ".ply");
 
     // Load sceneSamples
-    vector<Sample> sceneSamples = readHDF5("scenesamples_" + seq + ".h5");
+    vector<Sample> sceneSamples = readHDF5(hdf5_path + "scenesamples_" + seq + ".h5");
 
     // Create the renderer
     SphereRenderer renderer;
