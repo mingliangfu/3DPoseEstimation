@@ -117,18 +117,55 @@ layer {
 }
 
 
+layer {
+  name: "slicer"
+  type: "Slice"
+  bottom: "ip2"
+  top: "feat_triplets"
+  top: "feat_pairs"
+  slice_param {
+    axis: 0     
+    slice_point: 192
+  }
+}
+
+layer {
+  name: "slicer"
+  type: "Slice"
+  bottom: "label"
+  top: "labels_triplets"
+  top: "labels_pairs"
+  slice_param {
+    axis: 0     
+    slice_point: 192
+  }
+}
 
 layer {
   name: "loss"
   type: "TripletLoss"
-  bottom: "ip2"
-  bottom: "label"
+  bottom: "feat_triplets"
+  bottom: "label_triplets"
   top: "loss"
   triplet_loss_param{
     margin: 0.1
     losstype: 1
     num_negatives: 1
     use_pair: 0
+}
+
+
+layer {
+  name: "loss"
+  type: "TripletLoss"
+  bottom: "feat_pairs"
+  bottom: "label_pairs"
+  top: "loss"
+  triplet_loss_param{
+    margin: 0.1
+    losstype: 1
+    num_negatives: 0
+    use_pair: 1
 }
 
 }
