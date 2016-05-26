@@ -1,1 +1,6 @@
 build
+*.solverstate
+*.caffemodel
+*.hd5
+*.o
+*.txt
