@@ -7,8 +7,9 @@
 
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
-#include <opencv2/imgproc.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/viz.hpp>
+#include <opencv2/features2d.hpp>
 
 #include <Eigen/Geometry>
 #include <Eigen/StdVector>
@@ -29,13 +30,12 @@ using namespace std;
 using namespace cv;
 using namespace boost;
 
+
 vector<string> models = {"ape","benchvise","bowl","cam","can","cat", "cup","driller",
                          "duck","eggbox","glue","holepuncher","iron","lamp","phone"};
 
-
 unordered_map<string,int> model_index;
-
-string LINEMOD_path = "/home/kehl/Dropbox/LINEMOD/";
+string LINEMOD_path = "/media/zsn/Storage/BMC/Master/Implementation/dataset/";
 
 
 struct Frame
@@ -93,6 +93,7 @@ Benchmark loadLinemodBenchmark(string LINEMOD_path, string sequence, int count=-
             for(int l=0; l < 4;l++)
                 pose >> frame.gt.matrix()(k,l);
         bench.frames.push_back(frame);
+        cout << sequence << ", sample:  " << i << endl;
     }
 
     bench.cam = Matrix3f::Identity();
@@ -103,6 +104,10 @@ Benchmark loadLinemodBenchmark(string LINEMOD_path, string sequence, int count=-
     return bench;
 }
 
+struct Sample
+{
+    Mat data, label;
+};
 
 void showGT(Benchmark &bench, Model &m)
 {
@@ -131,10 +136,6 @@ void showGT(Benchmark &bench, Model &m)
     }
 }
 
-struct Sample
-{
-    Mat data, label;
-};
 
 
 void writeHDF5(string filename, vector<Sample> &samples)
@@ -336,7 +337,6 @@ vector<Sample> extractSceneSamplesPaul(vector<Frame,Eigen::aligned_allocator<Fra
     vector<Sample> samples;
     for (Frame &f : frames)
     {
-
         Vector3f centroid = f.gt.translation();
         Vector3f projCentroid = cam*centroid;
         projCentroid /= projCentroid(2);
@@ -457,7 +457,7 @@ vector<Sample> createTemplatesWadim(Model &model,Matrix3f &cam, int index)
     {
         // Instead of taking object centroid, take the surface point as central sample point
         float z = v.dep.at<float>(cam(1,2),cam(0,2));
-        assert(z>0.0f);
+        //        assert(z>0.0f);
 
         Sample sample;
         sample.data = samplePatchWithScale(v.col,v.dep,cam(0,2),cam(1,2),v.pose.translation()(2),cam(0,0),cam(1,1));
@@ -491,20 +491,20 @@ void createSceneSamplesAndTemplates(string seq)
     //showGT(bench,model);
 
     // For each scene frame, extract RGBD sample
-    vector<Sample> sceneSamples = extractSceneSamplesPaul(bench.frames,bench.cam,model_index[seq]);
+    //vector<Sample> sceneSamples = extractSceneSamplesPaul(bench.frames,bench.cam,model_index[seq]);
     //vector<Sample> sceneSamples = extractSceneSamplesWadim(bench.frames,bench.cam,model_index[seq]);
 
 
-    writeHDF5("scenesamples_" + seq +".h5", sceneSamples);
+    //writeHDF5("scenesamples_" + seq +".h5", sceneSamples);
 
-    //for (Sample &s : sceneSamples) showRGBDPatch(s.data);
+    //    for (Sample &s : sceneSamples) showRGBDPatch(s.data);
 
 
     // Create synthetic templates
-    vector<Sample> templates = createTemplatesPaul(model,bench.cam,model_index[seq]);
-    //vector<Sample> templates = createTemplatesWadim(model,bench.cam,model_index[seq]);
+    //vector<Sample> templates = createTemplatesPaul(model,bench.cam,model_index[seq]);
+    vector<Sample> templates = createTemplatesWadim(model,bench.cam,model_index[seq]);
 
-    writeHDF5("templates_" + seq + ".h5", templates);
+    writeHDF5("tempwadim_" + seq + ".h5", templates);
 
     //for (Sample &s : templates) showRGBDPatch(s.data);
 
@@ -526,7 +526,7 @@ void buildTriplets(vector<string> used_models)
     for (string &seq : used_models)
     {
         scene_samples.push_back(readHDF5("scenesamples_" + seq + ".h5"));
-        templates.push_back(readHDF5("templates_" + seq + ".h5"));
+        templates.push_back(readHDF5("tempwadim_" + seq + ".h5"));
     }
 
     // Read quaternion poses from scene samples
@@ -541,33 +541,33 @@ void buildTriplets(vector<string> used_models)
 
 
     // Read quaternion poses from templates (they are identical for all objects)
-    vector<Quaternionf, Eigen::aligned_allocator<Quaternionf> > tpl_quat(301);
-    for  (int i=0; i < 301; ++i)
+    int nrposes = 2359;
+    vector<Quaternionf, Eigen::aligned_allocator<Quaternionf> > tpl_quat(nrposes);
+    for  (int i=0; i < nrposes; ++i)
         for (int j=0; j < 4; ++j)
-           tpl_quat[i].coeffs()(j) = templates[0][i].label.at<float>(0,1+j);
+            tpl_quat[i].coeffs()(j) = templates[0][i].label.at<float>(0,1+j);
 
 
 
     // Build a bool vector for each object that stores if all templates have been used yet
     vector< vector<bool> > tpl_used(nr_objects);
     for (auto &vec : tpl_used)
-        vec.assign(301,false);
+        vec.assign(nrposes,false);
 
     // Random generator for object selection and template selection
     std::random_device ran;
-    std::uniform_int_distribution<size_t> ran_obj(0, nr_objects-1), ran_tpl(0, 300);
+    std::uniform_int_distribution<size_t> ran_obj(0, nr_objects-1), ran_tpl(0, nrposes-1);
 
     // Random generators that returns a random scene sample for a given object
     vector< std::uniform_int_distribution<size_t> > ran_scene_sample(nr_objects);
     for  (int i=0; i < nr_objects; ++i)
         ran_scene_sample[i] = std::uniform_int_distribution<size_t>(0, scene_samples[i].size()-1);
 
+    cout << "Start building triplets!" << endl;
 
     for(bool finished=false; !finished;)
     {
-
         size_t anchor, puller, pusher;
-
 
         // Build each triplet by cycling through each object
         for (size_t obj=0; obj < nr_objects; obj++)
@@ -579,7 +579,7 @@ void buildTriplets(vector<string> used_models)
             size_t ran_sample = ran_scene_sample[obj](ran);
             puller=0;
             float best_dist = numeric_limits<float>::max();
-            for (size_t temp=0; temp < 301; temp++)
+            for (size_t temp=0; temp < nrposes; temp++)
             {
                 if (tpl_used[obj][temp]) continue;  // Skip if template already used
                 float temp_dist = scene_quats[obj][ran_sample].angularDistance(tpl_quat[temp]);
@@ -614,7 +614,7 @@ void buildTriplets(vector<string> used_models)
             // Find puller template with closest pose
             puller=0;
             best_dist = numeric_limits<float>::max();
-            for (size_t temp=0; temp < 301; temp++)
+            for (size_t temp=0; temp < nrposes; temp++)
             {
                 if (temp == anchor) continue; // we skip the anchor template
                 float temp_dist = tpl_quat[anchor].angularDistance(tpl_quat[temp]);
@@ -651,7 +651,7 @@ void buildTriplets(vector<string> used_models)
 
 
 
-#if 0       // Show triplets
+#if 0      // Show triplets
             for (size_t idx = triplets.size()-3; idx < triplets.size(); idx++)
             {
                 imshow("anchor",showRGBDPatch(triplets[idx].anchor.data,false));
@@ -661,12 +661,12 @@ void buildTriplets(vector<string> used_models)
             }
 #endif
 
-
-        }      
+            cout << "Done building triplets!" << endl;
+        }
 
         // Check if we are finished (if all templates of all objects were anchors once)
         for (auto &vec : tpl_used)
-            for (int i=0; i < 301; ++i) finished &= vec[i];
+            for (int i=0; i < nrposes; ++i) finished &= vec[i];
 
         finished = triplets.size()>100000;
 
@@ -697,8 +697,7 @@ void buildTriplets(vector<string> used_models)
         }
     }
 
-
-
+    cout << "Done building triplets!" << endl;
 
 }
 
@@ -706,7 +705,7 @@ void buildTriplets(vector<string> used_models)
 
 void trainNet()
 {
-    caffe::Caffe::set_mode(caffe::Caffe::GPU);
+    caffe::Caffe::set_mode(caffe::Caffe::CPU);
 
     caffe::SolverParameter solver_param;
     solver_param.set_base_lr(0.0001);
@@ -730,7 +729,7 @@ void trainNet()
     solver_param.set_net("manifold_train.prototxt");
     caffe::SGDSolver<float> *solver = new caffe::SGDSolver<float>(solver_param);
     string resume = "manifold_iter_50000.solverstate";
-    //solver->Solve(resume);
+    //    solver->Solve(resume);
     solver->Solve();
 }
 
@@ -772,8 +771,8 @@ Mat computeDescriptors(caffe::Net<float> &CNN, vector<Sample> samples)
             // Copy data memory into Caffe input layer, process batch and copy result back
             input_layer->set_cpu_data(data.data());
             vector< caffe::Blob<float>* > out = CNN.ForwardPrefilled();
-                     
-            for (size_t j=0; j < currIdxs.size(); ++j) 
+
+            for (size_t j=0; j < currIdxs.size(); ++j)
                 memcpy(descs.ptr<float>(currIdxs[j]), out[0]->cpu_data() + j*desc_dim, desc_dim*sizeof(float));
 
             currIdxs.clear(); // Throw away current batch
@@ -786,7 +785,7 @@ Mat computeDescriptors(caffe::Net<float> &CNN, vector<Sample> samples)
 
 void testNet()
 {
-    caffe::Caffe::set_mode(caffe::Caffe::GPU);
+    caffe::Caffe::set_mode(caffe::Caffe::CPU);
     caffe::Net<float> CNN("manifold_test.prototxt", caffe::TEST);
     CNN.CopyTrainedLayersFrom("manifold_iter_25000.caffemodel");
     
@@ -818,6 +817,154 @@ void testNet()
     
 }
 
+void testKNN(bool realData)
+{
+    // Model name to check
+    string seq = "ape";
+
+    // Camera matrix
+    Matrix3f cam = Matrix3f::Identity();
+    cam(0,0) = 572.4114f;
+    cam(0,2) = 325.2611f;
+    cam(1,1) = 573.5704f;
+    cam(1,2) = 242.0489f;
+
+    // Load the snapshot
+    caffe::Caffe::set_mode(caffe::Caffe::CPU);
+    caffe::Net<float> CNN("manifold_test.prototxt", caffe::TEST);
+    CNN.CopyTrainedLayersFrom("manifold_iter_25000.caffemodel");
+
+    // Read the templates, compute the descriptors and store them to DB
+    vector<Sample> ape = readHDF5("templates_ape.h5");
+    ape.resize(301);
+    Mat DBfeats = computeDescriptors(CNN,ape);
+
+    // Load model
+    Model model;
+    model.loadPLY(LINEMOD_path + seq + ".ply");
+
+    // Load sceneSamples
+    vector<Sample> sceneSamples = readHDF5("scenesamples_" + seq + ".h5");
+
+    // Create the renderer
+    SphereRenderer renderer;
+    renderer.init(cam);
+    Mat col,dep;
+    Isometry3f pose = Isometry3f::Identity();
+    pose.translation()(2) = 0.4f;
+
+    // Randomize the angle
+    std::random_device ran;
+    std::uniform_real_distribution<float> angle(0, M_PI/2);
+    std::uniform_real_distribution<float> a(0, 2*M_PI), i(0, M_PI/2);
+
+    // Create a k-NN matcher
+    cv::Ptr<DescriptorMatcher> matcher = DescriptorMatcher::create("FlannBased");
+    matcher->add(DBfeats);
+
+    // Enter the infinite loop
+    while(true)
+    {
+        // Test on random synthetic data
+        if(!realData)
+        {
+            // - use the half sphere with random azi and inc to render
+            float azi = a(ran);
+            float inc = i(ran);
+            Vector3f vertex(sin(inc)*cos(azi),sin(inc)*sin(azi),cos(inc));
+            pose.linear() = renderer.computeRotation(vertex);
+
+            // - assign random angles to the poses
+            //Matrix3f randomAngles = AngleAxisf(angle(ran), Vector3f::UnitX())
+            //                      * AngleAxisf(angle(ran), Vector3f::UnitY())
+            //                      * AngleAxisf(angle(ran), Vector3f::UnitZ()).matrix();
+            //pose.linear() = randomAngles;
+
+            renderer.renderView(model, pose, col, dep, false);
+
+            // - generate the sample
+            vector<Sample> samples;
+            Sample sample;
+            sample.data = samplePatchWithScale(col, dep, cam(0,2), cam(1,2), pose.translation()(2), cam(0,0), cam(1,1));
+            samples.push_back(sample);
+
+            // - compute the descriptor of the new sample
+            Mat newDescs = computeDescriptors(CNN,samples);
+
+            // - match the sample
+            vector< vector<DMatch> > matches;
+            matcher->knnMatch(newDescs, matches, 5);
+
+            // - show the result
+            imshow("template",showRGBDPatch(sample.data,false));
+
+            for (DMatch &m : matches[0])
+            {
+                // - show the result
+                imshow("kNN",showRGBDPatch(samples[0].data,false));
+                imshow("kNN",showRGBDPatch(ape[m.trainIdx].data,false));
+
+//                    Quaternionf sampleQuat, kNNQuat;
+//                    for (int i=0; i < 4; ++i)
+//                    {
+//                        sampleQuat.coeffs()(i) = samples[0].label.at<float>(0,1+i);
+//                        kNNQuat.coeffs()(i) = ape[m.trainIdx].label.at<float>(0,1+i);
+//                    }
+
+
+                // -- compute angle difference
+//                cout << "Angle difference: " << sampleQuat.angularDistance(kNNQuat) << endl;
+
+                waitKey();
+            }
+
+            imshow("kNN",showRGBDPatch(ape[matches[0][0].trainIdx].data,false));
+            waitKey();
+
+        // Test on real data
+        } else {
+
+            std::uniform_int_distribution<size_t> sampleId(0, sceneSamples.size()-1);
+
+
+            // - take random sample
+            vector<Sample> samples;
+            samples.push_back(sceneSamples[sampleId(ran)]);
+
+            // - compute the descriptor of the new sample
+            Mat newDescs = computeDescriptors(CNN,samples);
+
+            // - match the sample
+            vector< vector<DMatch> > matches;
+            int knn=5;
+            matcher->knnMatch(newDescs, matches, knn);
+
+            // - show the result
+            imshow("sceneSample",showRGBDPatch(samples[0].data,false));
+
+            for (DMatch &m : matches[0])
+            {
+                    imshow("kNN",showRGBDPatch(ape[m.trainIdx].data,false));
+
+                    Quaternionf sampleQuat, kNNQuat;
+                    for (int i=0; i < 4; ++i)
+                    {
+                        sampleQuat.coeffs()(i) = samples[0].label.at<float>(0,1+i);
+                        kNNQuat.coeffs()(i) = ape[m.trainIdx].label.at<float>(0,1+i);
+                    }
+
+                // -- compute angle difference
+                cout << "Angle difference: " << sampleQuat.angularDistance(kNNQuat) << endl;
+
+                waitKey();
+            }
+
+        }
+
+    }
+
+}
+
 
 int main(int argc, char *argv[])
 {
@@ -828,21 +975,19 @@ int main(int argc, char *argv[])
         model_index[models[i]] = i;
 
         // Create all samples for this object (needs to be done only once)
-        //createSceneSamplesAndTemplates(models[i]);
+        //        createSceneSamplesAndTemplates(models[i]);
     }
 
 
-
-    //buildTriplets(vector<string>({"ape","driller","cam"}));
-
+    //    buildTriplets(vector<string>({"ape","bowl","cam"}));
 
 
-    //trainNet();
+    //    trainNet();
+    //    testNet();
+    testKNN(1);
 
-    testNet();
 
     return 0;
-
 }
 
 
