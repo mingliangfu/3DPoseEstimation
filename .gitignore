@@ -4,3 +4,4 @@ build
 *.hd5
 *.o
 *.txt
+*.pro.user
