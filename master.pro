@@ -18,7 +18,7 @@ LIBS += -lopencv_core -lopencv_highgui -lopencv_imgproc -lopencv_imgcodecs -lope
 #QMAKE_CFLAGS += -fsanitize=address -fno-omit-frame-pointer
 #QMAKE_LFLAGS += -fsanitize=address
 
-SOURCES += example.cpp  sphere.cpp  painter.cpp  model.cpp sphere.h painter.h model.h
+SOURCES += main.cpp  sphere.cpp  painter.cpp  model.cpp sphere.h painter.h model.h
 
 
 

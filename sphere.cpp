@@ -97,7 +97,7 @@ vector<RenderView, Eigen::aligned_allocator<RenderView> > SphereRenderer::create
     }
     */
 
-    cerr << "SphereRenderer - rendered " << out.size() << " views" << endl;
+    clog << "    - sphereRenderer - rendered " << out.size() << " views" << endl;
     return out;
 }
 
@@ -192,7 +192,7 @@ vector<Vector3f> SphereRenderer::initSphere(int depth)
 
     for (Vector3f &p : sphere) p.normalize();
 
-    cerr << "SphereRenderer - vertices: " << sphere.size() << "   min: " << min << " deg apart" << endl;
+    clog << "    - sphereRenderer - vertices: " << sphere.size() << "   min: " << min << " deg apart" << endl;
     return sphere;
 }
 

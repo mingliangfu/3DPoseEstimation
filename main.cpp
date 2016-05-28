@@ -1,5 +1,3 @@
-
-
 #include <fstream>
 #include <sstream>
 #include <random>
@@ -24,7 +22,6 @@
 #include "sphere.h"
 
 
-
 using namespace Eigen;
 using namespace std;
 using namespace cv;
@@ -38,6 +35,24 @@ unordered_map<string,int> model_index;
 string LINEMOD_path = "/media/zsn/Storage/BMC/Master/Implementation/dataset/";
 string hdf5_path = "/media/zsn/Storage/BMC/Master/Implementation/Wadim/build/debug/hdf5/";
 string network_path = "/media/zsn/Storage/BMC/Master/Implementation/Wadim/network/";
+
+std::random_device ran;
+
+
+static inline void loadbar( string label, unsigned int x, unsigned int n, unsigned int w = 20)
+{
+    if ( (x != n) && (x % (n/100+1) != 0) ) return;
+
+    float ratio  =  x/(float)n;
+    int   c      =  ratio * w;
+
+    clog << label << setw(3) << (int)(ratio*100) << "% [";
+    for (int x=0; x<c; x++) clog << "=";
+    for (int x=c; x<w; x++) clog << " ";
+    clog << "]\r" << flush;
+
+    if ( x == n ) clog << endl;
+}
 
 
 struct Frame
@@ -59,7 +74,7 @@ struct Benchmark
 Benchmark loadLinemodBenchmark(string LINEMOD_path, string sequence, int count=-1)
 {
     string dir_string = LINEMOD_path + sequence;
-    cerr << "Loading benchmark " << dir_string << endl;
+    cerr << "  - loading benchmark " << dir_string << endl;
 
     filesystem::path dir(dir_string);
     if (!(filesystem::exists(dir) && filesystem::is_directory(dir)))
@@ -79,7 +94,7 @@ Benchmark loadLinemodBenchmark(string LINEMOD_path, string sequence, int count=-
         }
 
     if (count>-1) last = count;
-    cout << "Loading frames in the range " << 0 << " - " << last << endl;
+//    cout << "  - loading frames in the range " << 0 << " - " << last << ":"<< endl;
     Benchmark bench;
     for (int i=0; i <= last;i++)
     {
@@ -95,7 +110,8 @@ Benchmark loadLinemodBenchmark(string LINEMOD_path, string sequence, int count=-
             for(int l=0; l < 4;l++)
                 pose >> frame.gt.matrix()(k,l);
         bench.frames.push_back(frame);
-        cout << sequence << ", sample:  " << i << endl;
+//        cout << sequence << ", sample:  " << i << endl;
+        loadbar("  - loading frames: ",i,last);
     }
 
     bench.cam = Matrix3f::Identity();
@@ -109,6 +125,17 @@ Benchmark loadLinemodBenchmark(string LINEMOD_path, string sequence, int count=-
 struct Sample
 {
     Mat data, label;
+};
+
+// Define triplet struct and container
+struct Triplet{Sample anchor, puller, pusher;};
+// Define pairs
+struct Pair{Sample anchor, puller;};
+
+struct TripletsPairs
+{
+    vector<Triplet> triplets;
+    vector<Pair> pairs;
 };
 
 void showGT(Benchmark &bench, Model &m)
@@ -444,7 +471,7 @@ vector<Sample> extractSceneSamplesWadim(vector<Frame,Eigen::aligned_allocator<Fr
     return samples;
 }
 
-vector<Sample> createTemplatesWadim(Model &model,Matrix3f &cam, int index)
+vector<Sample> createTemplatesWadim(Model &model,Matrix3f &cam, int index, int subdiv)
 {
 
     // Create synthetic views
@@ -452,7 +479,7 @@ vector<Sample> createTemplatesWadim(Model &model,Matrix3f &cam, int index)
     Vector3f scales(0.4, 1.1, 1.0);     // Render from 0.4 meters
     Vector3f in_plane_rots(-45,15,45);  // Render in_plane_rotations from -45 degree to 45 degree in 15degree steps
     vector<RenderView, Eigen::aligned_allocator<RenderView> > views =
-            sphere.createViews(model,3,scales,in_plane_rots,true,false,false);    // Equidistant sphere sampling with recursive level 3
+            sphere.createViews(model,subdiv,scales,in_plane_rots,true,false,false);    // Equidistant sphere sampling with recursive level subdiv
 
     vector<Sample> samples;
     for (RenderView &v : views)
@@ -482,33 +509,40 @@ vector<Sample> createTemplatesWadim(Model &model,Matrix3f &cam, int index)
 void createSceneSamplesAndTemplates(string seq)
 {
 
-    cerr << "Creating samples and patches for " << seq << endl;
+    clog << "\nCreating samples and patches for " << seq << ":" << endl;
 
-    // Load model
+    // - load model
     Model model;
     model.loadPLY(LINEMOD_path+seq+".ply");
 
-    // Load frames of benchmark and visualize
+    // - load frames of benchmark and visualize
     Benchmark bench = loadLinemodBenchmark(LINEMOD_path,seq);
     //showGT(bench,model);
 
-    // For each scene frame, extract RGBD sample
-    //vector<Sample> sceneSamples = extractSceneSamplesPaul(bench.frames,bench.cam,model_index[seq]);
-    //vector<Sample> sceneSamples = extractSceneSamplesWadim(bench.frames,bench.cam,model_index[seq]);
+    // === Real data ===
 
+    // - for each scene frame, extract RGBD sample
+    vector<Sample> realSamples = extractSceneSamplesWadim(bench.frames,bench.cam,model_index[seq]);
+    // vector<Sample> realSamples = extractSceneSamplesPaul(bench.frames,bench.cam,model_index[seq]);
 
-    //writeHDF5(hfd5_path + "scenesamples_" + seq +".h5", sceneSamples);
+    // - store realSamples to HDF5 files
+    writeHDF5(hdf5_path + "realSamples_" + seq +".h5", realSamples);
+    //    for (Sample &s : realSamples) showRGBDPatch(s.data);
 
-    //    for (Sample &s : sceneSamples) showRGBDPatch(s.data);
+    // === Synthetic data ===
 
+    clog << "  - render synthetic data:" << endl;
+    // - create synthetic samples and templates
+    int subdivTmpl = 2; // sphere subdivision factor for templates
+    vector<Sample> templates = createTemplatesWadim(model,bench.cam,model_index[seq], subdivTmpl);
+    vector<Sample> synthSamples = createTemplatesWadim(model,bench.cam,model_index[seq], subdivTmpl+1);
+    // vector<Sample> templates = createTemplatesPaul(model,bench.cam,model_index[seq]);
 
-    // Create synthetic templates
-    //vector<Sample> templates = createTemplatesPaul(model,bench.cam,model_index[seq]);
-    vector<Sample> templates = createTemplatesWadim(model,bench.cam,model_index[seq]);
-
-    writeHDF5(hdf5_path + "tempwadim_" + seq + ".h5", templates);
-
+    // store realSamples to HDF5 files
+    writeHDF5(hdf5_path + "templates_" + seq + ".h5", templates);
+    writeHDF5(hdf5_path + "synthSamples_" + seq + ".h5", synthSamples);
     //for (Sample &s : templates) showRGBDPatch(s.data);
+
 
 }
 
@@ -516,7 +550,6 @@ void buildTriplets(vector<string> used_models)
 {
 
     // Define triplet struct and container
-    struct Triplet{Sample anchor, puller, pusher;};
     vector<Triplet> triplets;
 
     size_t nr_objects = used_models.size();
@@ -542,22 +575,21 @@ void buildTriplets(vector<string> used_models)
 
 
     // Read quaternion poses from templates (they are identical for all objects)
-    int nrposes = 2359;
-    vector<Quaternionf, Eigen::aligned_allocator<Quaternionf> > tpl_quat(nrposes);
-    for  (int i=0; i < nrposes; ++i)
+    int nr_poses = 2359;
+    vector<Quaternionf, Eigen::aligned_allocator<Quaternionf> > tpl_quat(nr_poses);
+    for  (int i=0; i < nr_poses; ++i)
         for (int j=0; j < 4; ++j)
             tpl_quat[i].coeffs()(j) = templates[0][i].label.at<float>(0,1+j);
 
 
 
     // Build a bool vector for each object that stores if all templates have been used yet
-    vector< vector<bool> > tpl_used(nr_objects);
-    for (auto &vec : tpl_used)
-        vec.assign(nrposes,false);
+    vector< vector<bool> > tmpl_used(nr_objects);
+    for (auto &vec : tmpl_used)
+        vec.assign(nr_poses,false);
 
     // Random generator for object selection and template selection
-    std::random_device ran;
-    std::uniform_int_distribution<size_t> ran_obj(0, nr_objects-1), ran_tpl(0, nrposes-1);
+    std::uniform_int_distribution<size_t> ran_obj(0, nr_objects-1), ran_tpl(0, nr_poses-1);
 
     // Random generators that returns a random scene sample for a given object
     vector< std::uniform_int_distribution<size_t> > ran_scene_sample(nr_objects);
@@ -580,9 +612,9 @@ void buildTriplets(vector<string> used_models)
             size_t ran_sample = ran_scene_sample[obj](ran);
             puller=0;
             float best_dist = numeric_limits<float>::max();
-            for (size_t temp=0; temp < nrposes; temp++)
+            for (size_t temp=0; temp < nr_poses; temp++)
             {
-                if (tpl_used[obj][temp]) continue;  // Skip if template already used
+                if (tmpl_used[obj][temp]) continue;  // Skip if template already used
                 float temp_dist = scene_quats[obj][ran_sample].angularDistance(tpl_quat[temp]);
                 if (temp_dist >= best_dist) continue;
                 puller = temp;
@@ -592,7 +624,7 @@ void buildTriplets(vector<string> used_models)
             // TODO: what if closest unused template is actually rather far away in pose space? Better discard..?!
 
             // Mark template as used
-            tpl_used[obj][puller] = true;
+            tmpl_used[obj][puller] = true;
 
 
             // Randomize through until pusher != puller
@@ -615,7 +647,7 @@ void buildTriplets(vector<string> used_models)
             // Find puller template with closest pose
             puller=0;
             best_dist = numeric_limits<float>::max();
-            for (size_t temp=0; temp < nrposes; temp++)
+            for (size_t temp=0; temp < nr_poses; temp++)
             {
                 if (temp == anchor) continue; // we skip the anchor template
                 float temp_dist = tpl_quat[anchor].angularDistance(tpl_quat[temp]);
@@ -666,8 +698,8 @@ void buildTriplets(vector<string> used_models)
         }
 
         // Check if we are finished (if all templates of all objects were anchors once)
-        for (auto &vec : tpl_used)
-            for (int i=0; i < nrposes; ++i) finished &= vec[i];
+        for (auto &vec : tmpl_used)
+            for (int i=0; i < nr_poses; ++i) finished &= vec[i];
 
         finished = triplets.size()>100000;
 
@@ -702,6 +734,163 @@ void buildTriplets(vector<string> used_models)
 
 }
 
+TripletsPairs buildTripletsSergey(vector<string> used_models)
+{
+    vector<Triplet> triplets;
+    vector<Pair> pairs;
+    TripletsPairs triplets_pairs;
+
+    size_t nr_objects = used_models.size();
+    assert(nr_objects > 1);
+
+    // Read stored templates and scene samples for the used models
+    vector< vector<Sample> > training, templates, temp;
+    for (string &seq : used_models)
+    {
+        training.push_back(readHDF5(hdf5_path + "realSamples_" + seq +".h5"));
+        temp.push_back(readHDF5(hdf5_path + "synthSamples_" + seq +".h5"));
+        training[training.size()-1].insert(training[training.size()-1].end(), temp[0].begin(), temp[0].end());
+        temp.clear();
+        templates.push_back(readHDF5(hdf5_path + "templates_" + seq + ".h5"));
+
+
+    }
+
+//    // Shuffle the vectors
+//    for  (int i=0; i < nr_objects; ++i)
+//    {
+//        std::random_shuffle(training[i].begin(),training[i].end());
+//        std::random_shuffle(templates[i].begin(),templates[i].end());
+//    }
+
+    // Read quaternion poses from training data
+    vector< vector<Quaternionf, Eigen::aligned_allocator<Quaternionf> > > training_quats(nr_objects);
+    for  (int i=0; i < nr_objects; ++i)
+    {
+        training_quats[i].resize(training[i].size());
+        for (size_t k=0; k < training_quats[i].size(); ++k)
+            for (int j=0; j < 4; ++j)
+                training_quats[i][k].coeffs()(j) = training[i][k].label.at<float>(0,1+j);
+    }
+
+    // Read quaternion poses from templates (they are identical for all objects)
+    int nr_poses = templates[0].size();
+    vector<Quaternionf, Eigen::aligned_allocator<Quaternionf> > tmpl_quats(nr_poses);
+    for  (int i=0; i < nr_poses; ++i)
+        for (int j=0; j < 4; ++j)
+            tmpl_quats[i].coeffs()(j) = templates[0][i].label.at<float>(0,1+j);
+
+    // Build a bool vector for each object that stores if all templates have been used yet
+    vector< vector<bool> > tmpl_used(nr_objects);
+    for (auto &vec : tmpl_used)
+        vec.assign(nr_poses,false);
+
+    // Random generator for object selection and template selection
+    std::uniform_int_distribution<size_t> ran_obj(0, nr_objects-1), ran_tpl(0, nr_poses-1);
+
+    // Random generators that returns a random scene sample for a given object
+    vector< std::uniform_int_distribution<size_t> > ran_training_sample(nr_objects);
+    for  (int i=0; i < nr_objects; ++i)
+        ran_training_sample[i] = std::uniform_int_distribution<size_t>(0, training[i].size()-1);
+
+
+    for(bool finished=false; !finished;)
+    {
+        size_t anchor, puller, pusher, oldpusher;
+
+        // Build each triplet by cycling through each object
+        for (size_t obj=0; obj < nr_objects; obj++)
+        {
+
+            /// Type 0: A random scene sample together with closest template against another template
+
+            // Pull random scene sample and find closest pose neighbor from templates
+            size_t ran_sample = ran_training_sample[obj](ran);
+            puller=0;
+            float best_dist = numeric_limits<float>::max();
+            for (size_t temp=0; temp < nr_poses; temp++)
+            {
+//                if (tmpl_used[obj][temp]) continue;  // Skip if template already used
+                float temp_dist = training_quats[obj][ran_sample].angularDistance(tmpl_quats[temp]);
+                if (temp_dist >= best_dist) continue;
+                puller = temp;
+                best_dist = temp_dist;
+            }
+
+
+            // Mark template as used
+//            tpml_used[obj][puller] = true;
+
+
+            // Randomize through until pusher != puller
+            pusher = ran_tpl(ran);
+            while (pusher == puller) pusher = ran_tpl(ran);
+
+            Triplet triplet0;
+            triplet0.anchor = training[obj][ran_sample];
+            triplet0.puller = templates[obj][puller];
+            triplet0.pusher = templates[obj][pusher];
+            triplets.push_back(triplet0);
+            oldpusher = pusher;
+
+
+            /// Type 1: All templates are from same object but first two are closer than the third
+
+            // Randomize through until pusher is neither anchor nor puller
+            pusher = ran_tpl(ran);
+            while ((pusher == puller) && (pusher == oldpusher)) pusher = ran_tpl(ran);
+
+            Triplet triplet1;
+            triplet1.anchor = training[obj][ran_sample];
+            triplet1.puller = templates[obj][puller];
+            triplet1.pusher = templates[obj][pusher];
+            triplets.push_back(triplet1);
+
+            /// Type 2: two templates are from same object, the third from another
+
+            // Randomize through until pusher is another object
+            pusher = ran_obj(ran);
+            while (pusher == obj) pusher = ran_obj(ran);
+
+            Triplet triplet2;
+            triplet2.anchor = training[obj][ran_sample];
+            triplet2.puller = templates[obj][puller];
+            triplet2.pusher = templates[pusher][ran_tpl(ran)];
+            triplets.push_back(triplet2);
+
+
+#if 0      // Show triplets
+            for (size_t idx = triplets.size()-3; idx < triplets.size(); idx++)
+            {
+                imshow("anchor",showRGBDPatch(triplets[idx].anchor.data,false));
+                imshow("puller",showRGBDPatch(triplets[idx].puller.data,false));
+                imshow("pusher",showRGBDPatch(triplets[idx].pusher.data,false));
+                waitKey();
+            }
+
+#endif
+
+            /// Add pairs
+            Pair pair;
+            pair.anchor = training[obj][ran_sample];
+            pair.puller = templates[obj][puller];
+            pairs.push_back(pair);
+
+        }
+
+        // Check if we are finished (if all templates of all objects were anchors once)
+        for (auto &vec : tmpl_used)
+            for (int i=0; i < nr_poses; ++i) finished &= vec[i];
+
+        finished = triplets.size()>100000;
+
+    }
+    triplets_pairs.triplets = triplets;
+    triplets_pairs.pairs = pairs;
+
+    return triplets_pairs;
+
+}
 
 
 void trainNet()
@@ -732,6 +921,89 @@ void trainNet()
     string resume = network_path + "manifold_iter_50000.solverstate";
     //    solver->Solve(resume);
     solver->Solve();
+}
+
+void trainNetOnline(vector<string> used_models)
+{
+    caffe::SolverParameter solver_param;
+    solver_param.set_base_lr(0.0001);
+    solver_param.set_momentum(0.9);
+    solver_param.set_weight_decay(0.0005);
+
+    solver_param.set_solver_type(caffe::SolverParameter_SolverType_SGD);
+
+    solver_param.set_stepsize(1000);
+    solver_param.set_lr_policy("step");
+    solver_param.set_gamma(0.9);
+
+    int max_iters = 150000;
+    solver_param.set_max_iter(150000);
+
+    solver_param.set_snapshot(25000);
+    solver_param.set_snapshot_prefix("manifold");
+
+    solver_param.set_display(1);
+    solver_param.set_net(network_path + "manifold_train.prototxt");
+    caffe::SGDSolver<float> *solver = new caffe::SGDSolver<float>(solver_param);
+////    solver->Restore(network_path + "manifold_iter_50000.solverstate");
+
+    // Read the scene samples
+    vector<Sample> batch;
+    vector<Triplet> triplets;
+    vector<Pair> pairs;
+    TripletsPairs triplets_pairs;
+    triplets_pairs = buildTripletsSergey(used_models);
+
+    // Get network information
+    boost::shared_ptr<caffe::Net<float> > net = solver->net();
+    caffe::Blob<float>* input_data_layer = net->input_blobs()[0];
+    caffe::Blob<float>* input_label_layer = net->input_blobs()[1];
+    const size_t batchSize = input_data_layer->num();
+    const int channels =  input_data_layer->channels();
+    const int targetSize = input_data_layer->height();
+    const int slice = input_data_layer->height()*input_data_layer->width();
+    const int img_size = slice*channels;
+
+    vector<float> data(batchSize*img_size,0), labels(batchSize,0);
+
+    // Perform training
+    for (int iter = 0; iter <= max_iters; iter++)
+    {
+        // Fill current batch
+        int batch_pairs = 132;
+        int batch_triplets = 198;
+        batch.clear();
+
+        // Loop through the number of samples per batch
+        for (int sampleId = iter*batchSize; sampleId < iter*batchSize; ++sampleId)
+        {
+            // - fill triplets [:198]
+            for (int tripletId = (sampleId-(batch_pairs*iter))/3; tripletId < (sampleId-(batch_pairs*iter))/3 + batch_triplets/3; ++tripletId) {
+                batch.push_back(triplets_pairs.triplets[tripletId].anchor);
+                batch.push_back(triplets_pairs.triplets[tripletId].puller);
+                batch.push_back(triplets_pairs.triplets[tripletId].pusher);
+            }
+            // - fill pairs [198:330]
+            for (int pairId = (sampleId-(batch_triplets*iter))/2; pairId < (sampleId-(batch_triplets*iter))/2 + batch_pairs/2; ++pairId) {
+                batch.push_back(triplets_pairs.pairs[pairId].anchor);
+                batch.push_back(triplets_pairs.pairs[pairId].puller);
+            }
+        }
+
+        // Fill linear batch memory with input data in Caffe layout with channel-first and set as network input
+        for (size_t i=0; i < batch.size(); ++i)
+        {
+            int currImg = i*img_size;
+            for (int ch=0; ch < channels ; ++ch)
+                for (int y = 0; y < targetSize; ++y)
+                    for (int x = 0; x < targetSize; ++x)
+                        data[currImg + slice*ch + y*targetSize + x] = batch[i].data.ptr<float>(y)[x*channels + ch];
+            labels[i] = batch[i].label.at<float>(0,0);
+        }
+        input_data_layer->set_cpu_data(data.data());
+        input_label_layer->set_cpu_data(labels.data());
+        solver->Step(1);
+    }
 }
 
 
@@ -855,7 +1127,6 @@ void testKNN(bool realData)
     pose.translation()(2) = 0.4f;
 
     // Randomize the angle
-    std::random_device ran;
     std::uniform_real_distribution<float> angle(0, M_PI/2);
     std::uniform_real_distribution<float> a(0, 2*M_PI), i(0, M_PI/2);
 
@@ -976,16 +1247,16 @@ int main(int argc, char *argv[])
         model_index[models[i]] = i;
 
         // Create all samples for this object (needs to be done only once)
-        //        createSceneSamplesAndTemplates(models[i]);
+        createSceneSamplesAndTemplates(models[i]);
     }
 
+    // buildTriplets(vector<string>({"ape","bowl","cam"}));
+    // trainNet();
 
-    //    buildTriplets(vector<string>({"ape","bowl","cam"}));
+    trainNetOnline(vector<string>({"ape","bowl","cam"}));
 
-
-    //    trainNet();
-    //    testNet();
-    testKNN(1);
+    // testNet();
+    // testKNN(1);
 
 
     return 0;

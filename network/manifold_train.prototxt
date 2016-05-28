@@ -1,16 +1,7 @@
 name: "MANIFOLD"
 
-layer {
-  name: "data"
-  type: "HDF5Data"
-  top: "data"
-  top: "label"
-  hdf5_data_param {
-    source: "train_files.txt"
-    batch_size: 192
-  }
-}
-
+input: "data"
+input_shape{dim: 330 dim: 4 dim: 64 dim: 64}
 
 layer {
   name: "conv1"
@@ -125,49 +116,49 @@ layer {
   top: "feat_pairs"
   slice_param {
     axis: 0     
-    slice_point: 192
+    slice_point: 198
   }
 }
 
 layer {
   name: "slicer"
   type: "Slice"
-  bottom: "label"
-  top: "labels_triplets"
-  top: "labels_pairs"
+  bottom: "ip2"
+  top: "label_triplets"
+  top: "label_pairs"
   slice_param {
     axis: 0     
-    slice_point: 192
+    slice_point: 198
   }
 }
 
 layer {
-  name: "loss"
+  name: "tripletLoss"
   type: "TripletLoss"
   bottom: "feat_triplets"
   bottom: "label_triplets"
-  top: "loss"
+  top: "loss1"
   triplet_loss_param{
     margin: 0.1
     losstype: 1
     num_negatives: 1
     use_pair: 0
+  }
 }
 
 
 layer {
-  name: "loss"
+  name: "pairLoss"
   type: "TripletLoss"
   bottom: "feat_pairs"
   bottom: "label_pairs"
-  top: "loss"
+  top: "loss2"
   triplet_loss_param{
     margin: 0.1
     losstype: 1
     num_negatives: 0
     use_pair: 1
-}
-
+  }
 }
 
 

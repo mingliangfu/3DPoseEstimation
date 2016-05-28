@@ -4,6 +4,7 @@
 
 #include <list>
 #include <vector>
+#include <iomanip>
 
 #include <Eigen/Core>
 #include <Eigen/Geometry>
