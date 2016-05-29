@@ -5,13 +5,26 @@ CONFIG   += console
 CONFIG -= app_bundle
 
 
-LIBS +=  -L/usr/local/lib -lboost_filesystem
+LIBS +=  -L/usr/local/lib
 INCLUDEPATH += /usr/local/include /usr/include/eigen3 /usr/include/hdf5/serial/
 
 
 QMAKE_CXXFLAGS += -std=c++11 -march=native -O3
 LIBPATH += /home/zsn/Documents/caffe/distribute/lib
-LIBS += -lopencv_core -lopencv_highgui -lopencv_imgproc -lopencv_imgcodecs -lopencv_viz -lboost_system -lhdf5_cpp -lhdf5 -lcaffe -lprotobuf -lglog -lopencv_features2d
+LIBS += -lopencv_core -lopencv_highgui -lopencv_imgproc -lopencv_imgcodecs -lopencv_viz -lhdf5_cpp -lhdf5 -lcaffe -lprotobuf -lglog -lopencv_features2d
+
+unix:!macx {
+    LIBS +=  -lboost_filesystem -lboost_system
+
+}
+
+macx: {
+    QMAKE_CXXFLAGS += -stdlib=libc++
+    INCLUDEPATH += /opt/local/include/eigen3/ /opt/local/include/
+    INCLUDEPATH += /Developer/NVIDIA/CUDA-7.5/include
+    LIBS += -L/opt/local/lib/ -lboost_filesystem-mt -lboost_system-mt
+}
+
 
 
 #QMAKE_CXXFLAGS += -fsanitize=address -fno-omit-frame-pointer
