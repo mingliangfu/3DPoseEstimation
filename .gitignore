@@ -1,4 +1,5 @@
-build
+build/
+hdf5/
 *.solverstate
 *.caffemodel
 *.hd5
