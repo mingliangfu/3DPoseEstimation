@@ -4,8 +4,8 @@ CONFIG   += console
 CONFIG -= app_bundle
 
 
-LIBS +=  -L/usr/local/lib
-INCLUDEPATH += /usr/local/include /usr/include/eigen3 /usr/include/hdf5/serial/ $$PWD/include/
+LIBS +=  -L/usr/local/lib -L/opt/tum/external/lib -L/usr/lib/x86_64-linux-gnu/hdf5/serial/
+INCLUDEPATH += /usr/local/include /usr/include/eigen3 /usr/include/hdf5/serial/ $$PWD/include/ /opt/tum/external/include
 
 
 QMAKE_CXXFLAGS += -std=c++11 -march=native -O3
@@ -13,7 +13,7 @@ LIBPATH += /home/zsn/Documents/caffe/distribute/lib
 LIBS += -lopencv_core -lopencv_highgui -lopencv_imgproc -lopencv_imgcodecs -lopencv_viz -lhdf5_cpp -lhdf5 -lcaffe -lprotobuf -lglog -lopencv_features2d
 
 unix:!macx {
-    LIBS +=  -lboost_filesystem -lboost_system
+    LIBS +=  -lboost_filesystem -lboost_system -lboost_program_options
 
 }
 
