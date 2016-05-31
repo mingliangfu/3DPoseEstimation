@@ -45,10 +45,10 @@ int main(int argc, char *argv[])
     networkSolver solver(network_path, hdf5_path);
 
     // Generate the data set
-    generator.createSceneSamplesAndTemplates(vector<string>({"ape","bowl","cam"}));
+    //generator.createSceneSamplesAndTemplates(vector<string>({"ape","bowl","cam"}));
 
     // Train the network online
-    //    solver.trainNet(vector<string>({"ape","bowl","cam"}));
+    solver.trainNet(vector<string>({"ape","bowl","cam"}), "manifold", 0);
 
     // Test the network
     // solv.testNet();

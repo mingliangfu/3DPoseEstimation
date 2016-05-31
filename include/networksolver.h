@@ -19,7 +19,7 @@ public:
     networkSolver(string network_path, string hdf5_path);
     TripletsPairs buildTripletsPairs(vector<string> used_models);
     void setNetworkParameters();
-    void trainNet(vector<string> used_models);
+    void trainNet(vector<string> used_models, string net_name, int resume_iter);
     Mat computeDescriptors(caffe::Net<float> &CNN, vector<Sample> samples);
     void testNet();
 //    void testKNN(bool realData);
