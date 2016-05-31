@@ -355,6 +355,7 @@ void networkSolver::trainNet(vector<string> used_models, string net_name, int re
         }
         input_data_layer->set_cpu_data(data.data());
         //input_label_layer->set_cpu_data(labels.data());
+<<<<<<< HEAD
         solver->Step(1);
     }
 }
@@ -429,6 +430,8 @@ void networkSolver::trainNetWang(vector<string> used_models)
         }
         input_data_layer->set_cpu_data(data.data());
         input_label_layer->set_cpu_data(labels.data());
+=======
+>>>>>>> master
         solver->Step(1);
     }
 }
