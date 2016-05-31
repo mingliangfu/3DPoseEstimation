@@ -52,7 +52,7 @@ int main(int argc, char *argv[])
 
     // Test the network
     // solv.testNet();
-    // solv.testKNN(1);
+     solver.testKNN(vector<string>({"ape","bowl","cam"}));
 
     return 0;
 }

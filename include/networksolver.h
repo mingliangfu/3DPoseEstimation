@@ -25,7 +25,7 @@ public:
     void trainNetWang(vector<string> used_models, string net_name, int resume_iter=0);
     Mat computeDescriptors(caffe::Net<float> &CNN, vector<Sample> samples);
     void testNet();
-//    void testKNN(bool realData);
+    void testKNN(vector<string> used_models);
     Mat showRGBDPatch(Mat &patch, bool show=true);
 private:
     hdf5Handler h5;

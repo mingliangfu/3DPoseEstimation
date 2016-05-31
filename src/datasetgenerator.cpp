@@ -274,6 +274,9 @@ void datasetGenerator::createSceneSamplesAndTemplates(vector<string> used_models
         // - for each scene frame, extract RGBD sample
         vector<Sample> realSamples = extractSceneSamplesWadim(bench.frames,bench.cam,model_index[model_name]);
 
+        // - shuffle the samples
+        random_shuffle(realSamples.begin(), realSamples.end());
+
         // - store realSamples to HDF5 files
         h5.write(hdf5_path + "realSamples_" + model_name +".h5", realSamples);
         // for (Sample &s : realSamples) showRGBDPatch(s.data);
@@ -284,6 +287,10 @@ void datasetGenerator::createSceneSamplesAndTemplates(vector<string> used_models
         int subdivTmpl = 2; // sphere subdivision factor for templates
         vector<Sample> templates = createTemplatesWadim(model,bench.cam,model_index[model_name], subdivTmpl);
         vector<Sample> synthSamples = createTemplatesWadim(model,bench.cam,model_index[model_name], subdivTmpl+1);
+
+        // - shuffle the samples
+        random_shuffle(templates.begin(), templates.end());
+        random_shuffle(synthSamples.begin(), synthSamples.end());
 
         // - store realSamples to HDF5 files
         h5.write(hdf5_path + "templates_" + model_name + ".h5", templates);

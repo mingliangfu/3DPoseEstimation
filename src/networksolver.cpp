@@ -163,13 +163,20 @@ vector<TripletWang> networkSolver::buildTripletsWang(vector<string> used_models)
     assert(nr_objects > 1);
 
     // Read stored templates and scene samples for the used models
-    vector< vector<Sample> > training, templates, temp;
+    vector<vector<Sample>> training, templates;
     for (string &seq : used_models)
     {
-        training.push_back(h5.read(hdf5_path + "realSamples_" + seq +".h5"));
-        temp.push_back(h5.read(hdf5_path + "synthSamples_" + seq +".h5"));
-        training[training.size()-1].insert(training[training.size()-1].end(), temp[0].begin(), temp[0].end());
-        temp.clear();
+        vector<Sample> temp_real(h5.read(hdf5_path + "realSamples_" + seq + ".h5"));
+        vector<Sample> temp_synth(h5.read(hdf5_path + "synthSamples_" + seq + ".h5"));
+
+        // Crop the vector: real 50%, synthetic 70%
+        temp_real.resize((temp_real.size()-1)*0.5);
+        temp_synth.resize((temp_synth.size()-1)*0.7);
+
+        vector<Sample> temp_sum(temp_real);
+        temp_sum.insert(temp_sum.end(), temp_synth.begin(), temp_synth.end());
+
+        training.push_back(temp_sum);
         templates.push_back(h5.read(hdf5_path + "templates_" + seq + ".h5"));
     }
 
@@ -220,7 +227,7 @@ vector<TripletWang> networkSolver::buildTripletsWang(vector<string> used_models)
 
             triplet.anchor = training[obj][ran_sample];
 
-            // Find the puller
+            // Find the puller: most similar template
             for (size_t temp = 0; temp < nr_poses; temp++)
             {
                 float temp_dist = training_quats[obj][ran_sample].angularDistance(tmpl_quats[temp]);
@@ -230,8 +237,7 @@ vector<TripletWang> networkSolver::buildTripletsWang(vector<string> used_models)
             }
             triplet.puller = templates[obj][puller];
 
-
-            // Find pusher0
+            // Find pusher0: second most similar template
             for (size_t temp = 0; temp < nr_poses; temp++)
             {
                 float temp_dist = training_quats[obj][ran_sample].angularDistance(tmpl_quats[temp]);
@@ -241,12 +247,12 @@ vector<TripletWang> networkSolver::buildTripletsWang(vector<string> used_models)
             }
             triplet.pusher0 = templates[obj][pusher0];
 
-            // Find pusher1
+            // Find pusher1: random template
             pusher1 = ran_tpl(ran);
             while (pusher1 == puller && pusher1 == pusher0) pusher1 = ran_tpl(ran);
             triplet.pusher1 = templates[obj][pusher1];
 
-            // Find pusher2
+            // Find pusher2: template from another object
             pusher2 = ran_obj(ran);
             while (pusher2 == obj) pusher2 = ran_obj(ran);
             triplet.pusher2 = templates[pusher2][ran_tpl(ran)];
@@ -262,9 +268,7 @@ vector<TripletWang> networkSolver::buildTripletsWang(vector<string> used_models)
                 imshow("pusher2",showRGBDPatch(triplets[idx].pusher2.data,false));
                 waitKey();
             }
-
 #endif
-
         }
 
         finished = triplets.size()>100000;
@@ -417,7 +421,6 @@ void networkSolver::trainNetWang(vector<string> used_models, string net_name, in
             batch.push_back(triplets[tripletId].pusher2);
         }
 
-
         // Fill linear batch memory with input data in Caffe layout with channel-first and set as network input
         for (size_t i=0; i < batch.size(); ++i)
         {
@@ -533,144 +536,71 @@ Mat networkSolver::showRGBDPatch(Mat &patch, bool show/*=true*/)
     return out;
 }
 
-//void networkSolver::testKNN(bool realData)
-//{
-//    // Model name to check
-//    string seq = "ape";
+void networkSolver::testKNN(vector<string> used_models)
+{
 
-//    // Camera matrix
-//    Matrix3f cam = Matrix3f::Identity();
-//    cam(0,0) = 572.4114f;
-//    cam(0,2) = 325.2611f;
-//    cam(1,1) = 573.5704f;
-//    cam(1,2) = 242.0489f;
+    // Load the snapshot
+    caffe::Net<float> CNN(network_path + "manifold_wang.prototxt", caffe::TEST);
+    CNN.CopyTrainedLayersFrom(network_path + "manifold_iter_25000.caffemodel");
 
-//    // Load the snapshot
-//    caffe::Caffe::set_mode(caffe::Caffe::CPU);
-//    caffe::Net<float> CNN(network_path + "manifold_test.prototxt", caffe::TEST);
-//    CNN.CopyTrainedLayersFrom(network_path + "manifold_iter_25000.caffemodel");
+    // Get the test data
+    Mat DBfeats, DBtest;
+    vector<Sample> temp_sum, templates;
+    for (string &seq : used_models)
+    {
+        vector<Sample> temp_real(h5.read(hdf5_path + "realSamples_" + seq + ".h5"));
+        vector<Sample> temp_synth(h5.read(hdf5_path + "synthSamples_" + seq + ".h5"));
+        vector<Sample> temp_tmpl(h5.read(hdf5_path + "templates_" + seq + ".h5"));
 
-//    // Read the templates, compute the descriptors and store them to DB
-//    vector<Sample> ape = h5.read(hdf5_path + "templates_ape.h5");
-//    ape.resize(301);
-//    Mat DBfeats = computeDescriptors(CNN,ape);
+        // Crop the vector: real 50%, synthetic 70%
+        temp_real.erase(temp_real.begin(),temp_real.begin()+(temp_real.size()-1)*0.5);
+        temp_synth.erase(temp_synth.begin(),temp_synth.begin()+(temp_synth.size()-1)*0.7);
 
-//    // Load model
-//    Model model;
-//    model.loadPLY(dataset_path + seq + ".ply");
+        temp_sum.insert(temp_sum.end(), temp_real.begin(), temp_real.end());
+        temp_sum.insert(temp_sum.end(), temp_synth.begin(), temp_synth.end());
 
-//    // Load sceneSamples
-//    vector<Sample> sceneSamples = h5.read(hdf5_path + "scenesamples_" + seq + ".h5");
+        templates.insert(templates.end(), temp_tmpl.begin(), temp_tmpl.end());
 
-//    // Create the renderer
-//    SphereRenderer renderer;
-//    renderer.init(cam);
-//    Mat col,dep;
-//    Isometry3f pose = Isometry3f::Identity();
-//    pose.translation()(2) = 0.4f;
+    }
+    DBtest.push_back(computeDescriptors(CNN, temp_sum));
+    DBfeats.push_back(computeDescriptors(CNN, templates));
 
-//    // Randomize the angle
-////    std::uniform_real_distribution<float> angle(0, M_PI/2);
-//    std::uniform_real_distribution<float> a(0, 2*M_PI), i(0, M_PI/2);
+    // Create a k-NN matcher
+    cv::Ptr<DescriptorMatcher> matcher = DescriptorMatcher::create("FlannBased");
+    matcher->add(DBfeats);
 
-//    // Create a k-NN matcher
-//    cv::Ptr<DescriptorMatcher> matcher = DescriptorMatcher::create("FlannBased");
-//    matcher->add(DBfeats);
+    // Enter the infinite loop
+    while(true)
+    {
+        uniform_int_distribution<size_t> DBtestGen(0, DBtest.rows);
+        int DBtestId = DBtestGen(ran);
+        Mat testDescr = DBtest.row(DBtestId).clone();
 
-//    // Enter the infinite loop
-//    while(true)
-//    {
-//        // Test on random synthetic data
-//        if(!realData)
-//        {
-//            // - use the half sphere with random azi and inc to render
-//            float azi = a(ran);
-//            float inc = i(ran);
-//            Vector3f vertex(sin(inc)*cos(azi),sin(inc)*sin(azi),cos(inc));
-//            pose.linear() = renderer.computeRotation(vertex);
+        // - match the DBtest
+        vector< vector<DMatch> > matches;
+        int knn=5;
+        matcher->knnMatch(testDescr, matches, knn);
 
-//            // - assign random angles to the poses
-//            //Matrix3f randomAngles = AngleAxisf(angle(ran), Vector3f::UnitX())
-//            //                      * AngleAxisf(angle(ran), Vector3f::UnitY())
-//            //                      * AngleAxisf(angle(ran), Vector3f::UnitZ()).matrix();
-//            //pose.linear() = randomAngles;
+        // - show the result
+        imshow("sceneSample",showRGBDPatch(temp_sum[DBtestId].data,false));
 
-//            renderer.renderView(model, pose, col, dep, false);
+        for (DMatch &m : matches[0])
+        {
+                imshow("kNN",showRGBDPatch(templates[m.trainIdx].data,false));
 
-//            // - generate the sample
-//            vector<Sample> samples;
-//            Sample sample;
-//            sample.data = samplePatchWithScale(col, dep, cam(0,2), cam(1,2), pose.translation()(2), cam(0,0), cam(1,1));
-//            samples.push_back(sample);
+//                Quaternionf sampleQuat, kNNQuat;
+//                for (int i=0; i < 4; ++i)
+//                {
+//                    sampleQuat.coeffs()(i) = samples[0].label.at<float>(0,1+i);
+//                    kNNQuat.coeffs()(i) = DBfeats[m.trainIdx].label.at<float>(0,1+i);
+//                }
 
-//            // - compute the descriptor of the new sample
-//            Mat newDescs = computeDescriptors(CNN,samples);
+//            // -- compute angle difference
+//            cout << "Angle difference: " << sampleQuat.angularDistance(kNNQuat) << endl;
+            waitKey();
+        }
+    }
+}
 
-//            // - match the sample
-//            vector< vector<DMatch> > matches;
-//            matcher->knnMatch(newDescs, matches, 5);
-
-//            // - show the result
-//            imshow("template",showRGBDPatch(sample.data,false));
-
-//            for (DMatch &m : matches[0])
-//            {
-//                // - show the result
-//                imshow("kNN",showRGBDPatch(samples[0].data,false));
-//                imshow("kNN",showRGBDPatch(ape[m.trainIdx].data,false));
-
-////                    Quaternionf sampleQuat, kNNQuat;
-////                    for (int i=0; i < 4; ++i)
-////                    {
-////                        sampleQuat.coeffs()(i) = samples[0].label.at<float>(0,1+i);
-////                        kNNQuat.coeffs()(i) = ape[m.trainIdx].label.at<float>(0,1+i);
-////                    }
-//                // -- compute angle difference
-////                cout << "Angle difference: " << sampleQuat.angularDistance(kNNQuat) << endl;
-
-//                waitKey();
-//            }
-
-//            imshow("kNN",showRGBDPatch(ape[matches[0][0].trainIdx].data,false));
-//            waitKey();
-
-//        // Test on real data
-//        } else {
-
-//            std::uniform_int_distribution<size_t> sampleId(0, sceneSamples.size()-1);
-
-//            // - take random sample
-//            vector<Sample> samples;
-//            samples.push_back(sceneSamples[sampleId(ran)]);
-
-//            // - compute the descriptor of the new sample
-//            Mat newDescs = computeDescriptors(CNN,samples);
-
-//            // - match the sample
-//            vector< vector<DMatch> > matches;
-//            int knn=5;
-//            matcher->knnMatch(newDescs, matches, knn);
-
-//            // - show the result
-//            imshow("sceneSample",showRGBDPatch(samples[0].data,false));
-
-//            for (DMatch &m : matches[0])
-//            {
-//                    imshow("kNN",showRGBDPatch(ape[m.trainIdx].data,false));
-
-//                    Quaternionf sampleQuat, kNNQuat;
-//                    for (int i=0; i < 4; ++i)
-//                    {
-//                        sampleQuat.coeffs()(i) = samples[0].label.at<float>(0,1+i);
-//                        kNNQuat.coeffs()(i) = ape[m.trainIdx].label.at<float>(0,1+i);
-//                    }
-
-//                // -- compute angle difference
-//                cout << "Angle difference: " << sampleQuat.angularDistance(kNNQuat) << endl;
-//                waitKey();
-//            }
-//        }
-//    }
-//}
 
 

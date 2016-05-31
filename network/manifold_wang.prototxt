@@ -2,8 +2,7 @@ name: "MANIFOLD"
  
 input: "data"
 input_shape{dim: 300 dim: 4 dim: 64 dim: 64}
- 
- 
+
 layer { 
   name: "conv1" 
   type: "Convolution" 
