@@ -274,7 +274,7 @@ vector<TripletWang> networkSolver::buildTripletsWang(vector<string> used_models)
     return triplets;
 }
 
-void networkSolver::trainNet(vector<string> used_models, string net_name, int resume_iter=0)
+void networkSolver::trainNet(vector<string> used_models, string net_name, int resume_iter/*=0*/)
 {
     caffe::SolverParameter solver_param;
     solver_param.set_base_lr(0.0001);
@@ -355,12 +355,11 @@ void networkSolver::trainNet(vector<string> used_models, string net_name, int re
         }
         input_data_layer->set_cpu_data(data.data());
         //input_label_layer->set_cpu_data(labels.data());
-<<<<<<< HEAD
         solver->Step(1);
     }
 }
 
-void networkSolver::trainNetWang(vector<string> used_models)
+void networkSolver::trainNetWang(vector<string> used_models, string net_name, int resume_iter)
 {
     caffe::SolverParameter solver_param;
     solver_param.set_base_lr(0.0001);
@@ -377,11 +376,16 @@ void networkSolver::trainNetWang(vector<string> used_models)
     solver_param.set_max_iter(150000);
 
     solver_param.set_snapshot(20000);
-    solver_param.set_snapshot_prefix("manifold");
+    solver_param.set_snapshot_prefix(net_name);
 
     solver_param.set_display(1);
-    solver_param.set_net(network_path + "manifold_train_wang.prototxt");
+    solver_param.set_net(network_path + net_name + ".prototxt");
     caffe::SGDSolver<float> *solver = new caffe::SGDSolver<float>(solver_param);
+    if (resume_iter>0)
+    {
+        string resume_file = network_path + net_name + "_iter_" + to_string(resume_iter) + ".solverstate";
+        solver->Restore(resume_file.c_str());
+    }
 
     // Read the scene samples
     vector<Sample> batch;
@@ -429,9 +433,7 @@ void networkSolver::trainNetWang(vector<string> used_models)
             labels[i] = batch[i].label.at<float>(0,0);
         }
         input_data_layer->set_cpu_data(data.data());
-        input_label_layer->set_cpu_data(labels.data());
-=======
->>>>>>> master
+//        input_label_layer->set_cpu_data(labels.data());
         solver->Step(1);
     }
 }

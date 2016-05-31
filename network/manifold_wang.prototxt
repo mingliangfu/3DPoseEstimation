@@ -121,4 +121,5 @@ layer {
     num_negatives: 3 
     use_pair: 1
   } 
+ include {phase: TRAIN}
 } 

@@ -14,7 +14,7 @@ namespace po = boost::program_options;
 // Define paths to the data
 string linemod_path = "/media/zsn/Storage/BMC/Master/Implementation/dataset/";
 string hdf5_path = "/media/zsn/Storage/BMC/Master/Implementation/WadimRestructured/hdf5/";
-string network_path = "/media/zsn/Storage/BMC/Master/Implementation/WadimRestructured/network/";
+string network_path = "/home/zsn/Documents/3DPoseEstimation/network/";
 
 
 
@@ -48,7 +48,7 @@ int main(int argc, char *argv[])
     //generator.createSceneSamplesAndTemplates(vector<string>({"ape","bowl","cam"}));
 
     // Train the network online
-    solver.trainNet(vector<string>({"ape","bowl","cam"}), "manifold", 0);
+    solver.trainNetWang(vector<string>({"ape","bowl","cam"}), "manifold_wang", 0);
 
     // Test the network
     // solv.testNet();

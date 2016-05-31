@@ -21,12 +21,8 @@ public:
     TripletsPairs buildTripletsPairs(vector<string> used_models);
     vector<TripletWang> buildTripletsWang(vector<string> used_models);
     void setNetworkParameters();
-<<<<<<< HEAD
-    void trainNet(vector<string> used_models);
-    void trainNetWang(vector<string> used_models);
-=======
-    void trainNet(vector<string> used_models, string net_name, int resume_iter);
->>>>>>> master
+    void trainNet(vector<string> used_models, string net_name, int resume_iter=0);
+    void trainNetWang(vector<string> used_models, string net_name, int resume_iter=0);
     Mat computeDescriptors(caffe::Net<float> &CNN, vector<Sample> samples);
     void testNet();
 //    void testKNN(bool realData);
