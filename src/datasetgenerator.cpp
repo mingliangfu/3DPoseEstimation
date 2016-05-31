@@ -112,8 +112,6 @@ Mat datasetGenerator::samplePatchWithScale(Mat &color, Mat &depth, int center_x,
     return final;
 }
 
-
-
 vector<Sample> datasetGenerator::extractSceneSamplesPaul(vector<Frame,Eigen::aligned_allocator<Frame>> &frames, Matrix3f &cam, int index)
 {
     vector<Sample> samples;

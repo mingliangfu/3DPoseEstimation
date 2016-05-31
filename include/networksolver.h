@@ -1,6 +1,7 @@
 #ifndef NETWORKSOLVER_H
 #define NETWORKSOLVER_H
 
+#include <iostream>
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
@@ -18,11 +19,14 @@ class networkSolver
 public:
     networkSolver(string network_path, string hdf5_path);
     TripletsPairs buildTripletsPairs(vector<string> used_models);
+    vector<TripletWang> buildTripletsWang(vector<string> used_models);
     void setNetworkParameters();
     void trainNet(vector<string> used_models);
+    void trainNetWang(vector<string> used_models);
     Mat computeDescriptors(caffe::Net<float> &CNN, vector<Sample> samples);
     void testNet();
 //    void testKNN(bool realData);
+    Mat showRGBDPatch(Mat &patch, bool show=true);
 private:
     hdf5Handler h5;
     string network_path;

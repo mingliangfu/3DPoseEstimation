@@ -39,6 +39,11 @@ struct Triplet
     Sample anchor, puller, pusher;
 };
 
+struct TripletWang
+{
+    Sample anchor, puller, pusher0, pusher1, pusher2;
+};
+
 struct Pair
 {
     Sample anchor, puller;
@@ -64,6 +69,7 @@ static inline void loadbar( string label, unsigned int x, unsigned int n, unsign
 
     if ( x == n ) clog << endl;
 }
+
 
 
 

@@ -3,7 +3,6 @@
 networkSolver::networkSolver(string network_path, string hdf5_path):
                network_path(network_path), hdf5_path(hdf5_path)
 {
-
 }
 
 TripletsPairs networkSolver::buildTripletsPairs(vector<string> used_models)
@@ -154,10 +153,128 @@ TripletsPairs networkSolver::buildTripletsPairs(vector<string> used_models)
     triplets_pairs.pairs = pairs;
 
     return triplets_pairs;
-
 }
 
-void networkSolver::trainNet(vector<string> used_models)
+vector<TripletWang> networkSolver::buildTripletsWang(vector<string> used_models)
+{
+    vector<TripletWang> triplets;
+
+    size_t nr_objects = used_models.size();
+    assert(nr_objects > 1);
+
+    // Read stored templates and scene samples for the used models
+    vector< vector<Sample> > training, templates, temp;
+    for (string &seq : used_models)
+    {
+        training.push_back(h5.read(hdf5_path + "realSamples_" + seq +".h5"));
+        temp.push_back(h5.read(hdf5_path + "synthSamples_" + seq +".h5"));
+        training[training.size()-1].insert(training[training.size()-1].end(), temp[0].begin(), temp[0].end());
+        temp.clear();
+        templates.push_back(h5.read(hdf5_path + "templates_" + seq + ".h5"));
+    }
+
+    // Read quaternion poses from training data
+    vector< vector<Quaternionf, Eigen::aligned_allocator<Quaternionf> > > training_quats(nr_objects);
+    for  (int i=0; i < nr_objects; ++i)
+    {
+        training_quats[i].resize(training[i].size());
+        for (size_t k=0; k < training_quats[i].size(); ++k)
+            for (int j=0; j < 4; ++j)
+                training_quats[i][k].coeffs()(j) = training[i][k].label.at<float>(0,1+j);
+    }
+
+    // Read quaternion poses from templates (they are identical for all objects)
+    int nr_poses = templates[0].size();
+    vector<Quaternionf, Eigen::aligned_allocator<Quaternionf> > tmpl_quats(nr_poses);
+    for  (int i=0; i < nr_poses; ++i)
+        for (int j=0; j < 4; ++j)
+            tmpl_quats[i].coeffs()(j) = templates[0][i].label.at<float>(0,1+j);
+
+    // Build a bool vector for each object that stores if all templates have been used yet
+    vector< vector<bool> > tmpl_used(nr_objects);
+    for (auto &vec : tmpl_used)
+        vec.assign(nr_poses,false);
+
+    // Random generator for object selection and template selection
+    std::uniform_int_distribution<size_t> ran_obj(0, nr_objects-1), ran_tpl(0, nr_poses-1);
+
+    // Random generators that returns a random scene sample for a given object
+    vector< std::uniform_int_distribution<size_t> > ran_training_sample(nr_objects);
+    for  (int i=0; i < nr_objects; ++i)
+        ran_training_sample[i] = std::uniform_int_distribution<size_t>(0, training[i].size()-1);
+
+
+    for(bool finished=false; !finished;)
+    {
+        size_t anchor, puller, pusher0, pusher1, pusher2;
+        TripletWang triplet;
+
+        // Build each triplet by cycling through each object
+        for (size_t obj=0; obj < nr_objects; obj++)
+        {
+
+            /// Type 0: A random scene sample together with closest template against another template
+
+            // Pull random scene sample and find closest pose neighbor from templates
+            size_t ran_sample = ran_training_sample[obj](ran);
+            float best_dist = numeric_limits<float>::max();
+            float best_dist2 = numeric_limits<float>::max(); // second best
+
+            triplet.anchor = training[obj][ran_sample];
+
+            // Find the puller
+            for (size_t temp = 0; temp < nr_poses; temp++)
+            {
+                float temp_dist = training_quats[obj][ran_sample].angularDistance(tmpl_quats[temp]);
+                if (temp_dist >= best_dist) continue;
+                puller = temp;
+                best_dist = temp_dist;
+            }
+            triplet.puller = templates[obj][puller];
+
+
+            // Find pusher0
+            for (size_t temp = 0; temp < nr_poses; temp++)
+            {
+                float temp_dist = training_quats[obj][ran_sample].angularDistance(tmpl_quats[temp]);
+                if (temp_dist >= best_dist2 || temp_dist == best_dist) continue;
+                pusher0 = temp;
+                best_dist2 = temp_dist;
+            }
+            triplet.pusher0 = templates[obj][pusher0];
+
+            // Find pusher1
+            pusher1 = ran_tpl(ran);
+            while (pusher1 == puller && pusher1 == pusher0) pusher1 = ran_tpl(ran);
+            triplet.pusher1 = templates[obj][pusher1];
+
+            // Find pusher2
+            pusher2 = ran_obj(ran);
+            while (pusher2 == obj) pusher2 = ran_obj(ran);
+            triplet.pusher2 = templates[pusher2][ran_tpl(ran)];
+            triplets.push_back(triplet);
+
+#if 0      // Show triplets
+            for (size_t idx = triplets.size()-3; idx < triplets.size(); idx++)
+            {
+                imshow("anchor",showRGBDPatch(triplets[idx].anchor.data,false));
+                imshow("puller",showRGBDPatch(triplets[idx].puller.data,false));
+                imshow("pusher0",showRGBDPatch(triplets[idx].pusher0.data,false));
+                imshow("pusher1",showRGBDPatch(triplets[idx].pusher1.data,false));
+                imshow("pusher2",showRGBDPatch(triplets[idx].pusher2.data,false));
+                waitKey();
+            }
+
+#endif
+
+        }
+
+        finished = triplets.size()>100000;
+    }
+    return triplets;
+}
+
+void networkSolver::trainNet(vector<string> used_models, string net_name, int resume_iter=0)
 {
     caffe::SolverParameter solver_param;
     solver_param.set_base_lr(0.0001);
@@ -174,12 +291,16 @@ void networkSolver::trainNet(vector<string> used_models)
     solver_param.set_max_iter(150000);
 
     solver_param.set_snapshot(20000);
-    solver_param.set_snapshot_prefix("manifold");
+    solver_param.set_snapshot_prefix(net_name);
 
     solver_param.set_display(1);
-    solver_param.set_net(network_path + "manifold_train.prototxt");
+    solver_param.set_net(network_path + net_name + ".prototxt");
     caffe::SGDSolver<float> *solver = new caffe::SGDSolver<float>(solver_param);
-////    solver->Restore(network_path + "manifold_iter_50000.solverstate");
+    if (resume_iter>0)
+    {
+        string resume_file = network_path + net_name + "_iter_" + to_string(resume_iter) + ".solverstate";
+        solver->Restore(resume_file.c_str());
+    }
 
     // Read the scene samples
     vector<Sample> batch;
@@ -219,6 +340,80 @@ void networkSolver::trainNet(vector<string> used_models)
             for (int pairId = (sampleId-(batch_triplets*iter))/2; pairId < (sampleId-(batch_triplets*iter))/2 + batch_pairs/2; ++pairId) {
                 batch.push_back(triplets_pairs.pairs[pairId].anchor);
                 batch.push_back(triplets_pairs.pairs[pairId].puller);
+            }
+        }
+
+        // Fill linear batch memory with input data in Caffe layout with channel-first and set as network input
+        for (size_t i=0; i < batch.size(); ++i)
+        {
+            int currImg = i*img_size;
+            for (int ch=0; ch < channels ; ++ch)
+                for (int y = 0; y < targetSize; ++y)
+                    for (int x = 0; x < targetSize; ++x)
+                        data[currImg + slice*ch + y*targetSize + x] = batch[i].data.ptr<float>(y)[x*channels + ch];
+            labels[i] = batch[i].label.at<float>(0,0);
+        }
+        input_data_layer->set_cpu_data(data.data());
+        //input_label_layer->set_cpu_data(labels.data());
+        solver->Step(1);
+    }
+}
+
+void networkSolver::trainNetWang(vector<string> used_models)
+{
+    caffe::SolverParameter solver_param;
+    solver_param.set_base_lr(0.0001);
+    solver_param.set_momentum(0.9);
+    solver_param.set_weight_decay(0.0005);
+
+    solver_param.set_solver_type(caffe::SolverParameter_SolverType_SGD);
+
+    solver_param.set_stepsize(1000);
+    solver_param.set_lr_policy("step");
+    solver_param.set_gamma(0.9);
+
+    int max_iters = 150000;
+    solver_param.set_max_iter(150000);
+
+    solver_param.set_snapshot(20000);
+    solver_param.set_snapshot_prefix("manifold");
+
+    solver_param.set_display(1);
+    solver_param.set_net(network_path + "manifold_train_wang.prototxt");
+    caffe::SGDSolver<float> *solver = new caffe::SGDSolver<float>(solver_param);
+
+    // Read the scene samples
+    vector<Sample> batch;
+    vector<TripletWang> triplets;
+    triplets = buildTripletsWang(used_models);
+
+    // Get network information
+    boost::shared_ptr<caffe::Net<float> > net = solver->net();
+    caffe::Blob<float>* input_data_layer = net->input_blobs()[0];
+    caffe::Blob<float>* input_label_layer = net->input_blobs()[1];
+    const size_t batchSize = input_data_layer->num();
+    const int channels =  input_data_layer->channels();
+    const int targetSize = input_data_layer->height();
+    const int slice = input_data_layer->height()*input_data_layer->width();
+    const int img_size = slice*channels;
+
+    vector<float> data(batchSize*img_size,0), labels(batchSize,0);
+
+    // Perform training
+    for (int iter = 0; iter <= max_iters; iter++)
+    {
+        // Fill current batch
+        batch.clear();
+
+        // Loop through the number of samples per batch
+        for (int sampleId = iter*batchSize; sampleId < iter*batchSize; ++sampleId)
+        {
+            for (int tripletId = sampleId*5; tripletId < sampleId*5 + 5; ++tripletId) {
+                batch.push_back(triplets[tripletId].anchor);
+                batch.push_back(triplets[tripletId].puller);
+                batch.push_back(triplets[tripletId].pusher0);
+                batch.push_back(triplets[tripletId].pusher1);
+                batch.push_back(triplets[tripletId].pusher2);
             }
         }
 
@@ -317,6 +512,24 @@ void networkSolver::testNet()
     //lol.setViewerPose(cv::Affine3f::Identity());
     lol.spin();
 
+}
+
+Mat networkSolver::showRGBDPatch(Mat &patch, bool show/*=true*/)
+{
+    vector<Mat> channels;
+    //cv::split((patch+1.f)*0.5f,channels);
+    cv::split(patch,channels);
+
+    Mat RGB,D,out(patch.rows,patch.cols*2,CV_32FC3);
+
+    cv::merge(vector<Mat>({channels[0],channels[1],channels[2]}),RGB);
+    RGB.copyTo(out(Rect(0,0,patch.cols,patch.rows)));
+
+    cv::merge(vector<Mat>({channels[3],channels[3],channels[3]}),D);
+    D.copyTo(out(Rect(patch.cols,0,patch.cols,patch.rows)));
+
+    if(show) {imshow("R G B D",out); waitKey();}
+    return out;
 }
 
 //void networkSolver::testKNN(bool realData)
