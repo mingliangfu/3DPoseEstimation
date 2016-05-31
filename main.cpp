@@ -15,6 +15,7 @@ namespace po = boost::program_options;
 string linemod_path = "/media/zsn/Storage/BMC/Master/Implementation/dataset/";
 string hdf5_path = "/media/zsn/Storage/BMC/Master/Implementation/WadimRestructured/hdf5/";
 string network_path = "/home/zsn/Documents/3DPoseEstimation/network/";
+bool GPU = false;
 
 
 
@@ -33,6 +34,7 @@ int main(int argc, char *argv[])
     desc.add_options()("linemod_path", po::value<std::string>(&linemod_path), "Path to LineMOD dataset");
     desc.add_options()("hdf5_path", po::value<std::string>(&hdf5_path), "Path to training data as HDF5");
     desc.add_options()("network_path", po::value<std::string>(&network_path), "Path to networks");
+    desc.add_options()("gpu", po::value<bool>(&GPU), "GPU mode");
 
     // Read config file
     po::variables_map vm;
@@ -46,6 +48,11 @@ int main(int argc, char *argv[])
 
     // Generate the data set
     //generator.createSceneSamplesAndTemplates(vector<string>({"ape","bowl","cam"}));
+
+
+    if (GPU)
+        caffe::Caffe::set_mode(caffe::Caffe::GPU);
+
 
     // Train the network online
     solver.trainNetWang(vector<string>({"ape","bowl","cam"}), "manifold_wang", 0);
