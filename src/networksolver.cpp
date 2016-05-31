@@ -213,8 +213,6 @@ vector<TripletWang> networkSolver::buildTripletsWang(vector<string> used_models)
         for (size_t obj=0; obj < nr_objects; obj++)
         {
 
-            /// Type 0: A random scene sample together with closest template against another template
-
             // Pull random scene sample and find closest pose neighbor from templates
             size_t ran_sample = ran_training_sample[obj](ran);
             float best_dist = numeric_limits<float>::max();
@@ -395,7 +393,7 @@ void networkSolver::trainNetWang(vector<string> used_models, string net_name, in
     // Get network information
     boost::shared_ptr<caffe::Net<float> > net = solver->net();
     caffe::Blob<float>* input_data_layer = net->input_blobs()[0];
-    caffe::Blob<float>* input_label_layer = net->input_blobs()[1];
+//    caffe::Blob<float>* input_label_layer = net->input_blobs()[1];
     const size_t batchSize = input_data_layer->num();
     const int channels =  input_data_layer->channels();
     const int targetSize = input_data_layer->height();
@@ -411,16 +409,14 @@ void networkSolver::trainNetWang(vector<string> used_models, string net_name, in
         batch.clear();
 
         // Loop through the number of samples per batch
-        for (int sampleId = iter*batchSize; sampleId < iter*batchSize; ++sampleId)
-        {
-            for (int tripletId = sampleId*5; tripletId < sampleId*5 + 5; ++tripletId) {
-                batch.push_back(triplets[tripletId].anchor);
-                batch.push_back(triplets[tripletId].puller);
-                batch.push_back(triplets[tripletId].pusher0);
-                batch.push_back(triplets[tripletId].pusher1);
-                batch.push_back(triplets[tripletId].pusher2);
-            }
+        for (int tripletId = (iter*batchSize)/5; tripletId < (iter*batchSize)/5 + batchSize/5; ++tripletId) {
+            batch.push_back(triplets[tripletId].anchor);
+            batch.push_back(triplets[tripletId].puller);
+            batch.push_back(triplets[tripletId].pusher0);
+            batch.push_back(triplets[tripletId].pusher1);
+            batch.push_back(triplets[tripletId].pusher2);
         }
+
 
         // Fill linear batch memory with input data in Caffe layout with channel-first and set as network input
         for (size_t i=0; i < batch.size(); ++i)
@@ -428,9 +424,9 @@ void networkSolver::trainNetWang(vector<string> used_models, string net_name, in
             int currImg = i*img_size;
             for (int ch=0; ch < channels ; ++ch)
                 for (int y = 0; y < targetSize; ++y)
-                    for (int x = 0; x < targetSize; ++x)
+                    for (int x = 0; x < targetSize; ++x){
                         data[currImg + slice*ch + y*targetSize + x] = batch[i].data.ptr<float>(y)[x*channels + ch];
-            labels[i] = batch[i].label.at<float>(0,0);
+                        labels[i] = batch[i].label.at<float>(0,0); }
         }
         input_data_layer->set_cpu_data(data.data());
 //        input_label_layer->set_cpu_data(labels.data());
