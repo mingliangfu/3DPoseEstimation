@@ -47,7 +47,7 @@ int main(int argc, char *argv[])
     networkSolver solver(network_path, hdf5_path);
 
     // Generate the data set
-    //generator.createSceneSamplesAndTemplates(vector<string>({"ape","bowl","cam"}));
+    // generator.createSceneSamplesAndTemplates(vector<string>({"ape","bowl","cam"}));
 
 
     if (GPU)

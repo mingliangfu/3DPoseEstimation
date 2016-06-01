@@ -4,7 +4,7 @@ CONFIG   += console
 CONFIG -= app_bundle
 
 
-LIBS +=  -L/usr/local/lib -L/opt/tum/external/lib -L/usr/lib/x86_64-linux-gnu/hdf5/serial/
+LIBS +=  -L/usr/local/lib -L/usr/lib/x86_64-linux-gnu/hdf5/serial/ -L/opt/tum/external/lib
 INCLUDEPATH += /usr/local/include /usr/include/eigen3 /usr/include/hdf5/serial/ $$PWD/include/ /opt/tum/external/include
 
 

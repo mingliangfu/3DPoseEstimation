@@ -179,10 +179,12 @@ vector<TripletWang> networkSolver::buildTripletsWang(vector<string> used_models)
         training.push_back(temp_sum);
         templates.push_back(h5.read(hdf5_path + "templates_" + seq + ".h5"));
 
+#if 0
         for (int i = 0; i < temp_synth.size()-1; ++i) {
             imshow("test",showRGBDPatch(temp_synth[i].data,false));
             waitKey();
         }
+#endif
     }
 
     // Read quaternion poses from training data
@@ -276,7 +278,7 @@ vector<TripletWang> networkSolver::buildTripletsWang(vector<string> used_models)
 #endif
         }
 
-        finished = triplets.size()>100000;
+        finished = triplets.size()>1500000;
     }
     return triplets;
 }
@@ -369,20 +371,20 @@ void networkSolver::trainNet(vector<string> used_models, string net_name, int re
 void networkSolver::trainNetWang(vector<string> used_models, string net_name, int resume_iter)
 {
     caffe::SolverParameter solver_param;
-    solver_param.set_base_lr(0.0001);
+    solver_param.set_base_lr(0.001);
     solver_param.set_momentum(0.9);
     solver_param.set_weight_decay(0.0005);
 
     solver_param.set_solver_type(caffe::SolverParameter_SolverType_SGD);
 
-    solver_param.set_stepsize(1000);
+    solver_param.set_stepsize(5000);
     solver_param.set_lr_policy("step");
     solver_param.set_gamma(0.9);
 
-    int max_iters = 150000;
-    solver_param.set_max_iter(150000);
+    int max_iters = 50000;
+    solver_param.set_max_iter(max_iters);
 
-    solver_param.set_snapshot(20000);
+    solver_param.set_snapshot(5000);
     solver_param.set_snapshot_prefix(net_name);
 
     solver_param.set_display(1);
@@ -417,8 +419,10 @@ void networkSolver::trainNetWang(vector<string> used_models, string net_name, in
         // Fill current batch
         batch.clear();
 
+
+
         // Loop through the number of samples per batch
-        for (int tripletId = (iter*batchSize)/5; tripletId < (iter*batchSize)/5 + batchSize/5; ++tripletId) {
+        for (size_t tripletId = (iter*batchSize)/5; tripletId < (iter*batchSize)/5 + batchSize/5; ++tripletId) {
             batch.push_back(triplets[tripletId].anchor);
             batch.push_back(triplets[tripletId].puller);
             batch.push_back(triplets[tripletId].pusher0);
@@ -478,7 +482,7 @@ Mat networkSolver::computeDescriptors(caffe::Net<float> &CNN, vector<Sample> sam
             }
             // Copy data memory into Caffe input layer, process batch and copy result back
             input_layer->set_cpu_data(data.data());
-            vector< caffe::Blob<float>* > out = CNN.ForwardPrefilled();
+            vector< caffe::Blob<float>* > out = CNN.Forward();
 
             for (size_t j=0; j < currIdxs.size(); ++j)
                 memcpy(descs.ptr<float>(currIdxs[j]), out[0]->cpu_data() + j*desc_dim, desc_dim*sizeof(float));
