@@ -178,6 +178,11 @@ vector<TripletWang> networkSolver::buildTripletsWang(vector<string> used_models)
 
         training.push_back(temp_sum);
         templates.push_back(h5.read(hdf5_path + "templates_" + seq + ".h5"));
+
+        for (int i = 0; i < temp_synth.size()-1; ++i) {
+            imshow("test",showRGBDPatch(temp_synth[i].data,false));
+            waitKey();
+        }
     }
 
     // Read quaternion poses from training data
@@ -486,7 +491,6 @@ Mat networkSolver::computeDescriptors(caffe::Net<float> &CNN, vector<Sample> sam
 
 void networkSolver::testNet()
 {
-    caffe::Caffe::set_mode(caffe::Caffe::CPU);
     caffe::Net<float> CNN(network_path + "manifold_test.prototxt", caffe::TEST);
     CNN.CopyTrainedLayersFrom(network_path + "manifold_iter_25000.caffemodel");
 
@@ -582,21 +586,21 @@ void networkSolver::testKNN(vector<string> used_models)
         matcher->knnMatch(testDescr, matches, knn);
 
         // - show the result
-        imshow("sceneSample",showRGBDPatch(temp_sum[DBtestId].data,false));
+        imshow("training",showRGBDPatch(temp_sum[DBtestId].data,false));
 
         for (DMatch &m : matches[0])
         {
                 imshow("kNN",showRGBDPatch(templates[m.trainIdx].data,false));
 
-//                Quaternionf sampleQuat, kNNQuat;
-//                for (int i=0; i < 4; ++i)
-//                {
-//                    sampleQuat.coeffs()(i) = samples[0].label.at<float>(0,1+i);
-//                    kNNQuat.coeffs()(i) = DBfeats[m.trainIdx].label.at<float>(0,1+i);
-//                }
+                Quaternionf sampleQuat, kNNQuat;
+                for (int i=0; i < 4; ++i)
+                {
+                    sampleQuat.coeffs()(i) = temp_sum[DBtestId].label.at<float>(0,1+i);
+                    kNNQuat.coeffs()(i) = templates[m.trainIdx].label.at<float>(0,1+i);
+                }
 
-//            // -- compute angle difference
-//            cout << "Angle difference: " << sampleQuat.angularDistance(kNNQuat) << endl;
+            // -- compute angular difference
+            cout << "Angular difference: " << sampleQuat.angularDistance(kNNQuat) << endl;
             waitKey();
         }
     }
