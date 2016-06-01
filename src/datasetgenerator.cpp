@@ -226,7 +226,7 @@ vector<Sample> datasetGenerator::createTemplatesWadim(Model &model,Matrix3f &cam
     // Create synthetic views
     SphereRenderer sphere(cam);
     Vector3f scales(0.4, 1.1, 1.0);     // Render from 0.4 meters
-    Vector3f in_plane_rots(-45,15,45);  // Render in_plane_rotations from -45 degree to 45 degree in 15degree steps
+    Vector3f in_plane_rots(-0,15,10);  // Render in_plane_rotations from -45 degree to 45 degree in 15degree steps
     vector<RenderView, Eigen::aligned_allocator<RenderView> > views =
             sphere.createViews(model,subdiv,scales,in_plane_rots,true,false,false);    // Equidistant sphere sampling with recursive level subdiv
 
@@ -272,7 +272,7 @@ void datasetGenerator::createSceneSamplesAndTemplates(vector<string> used_models
 
         // === Real data ===
         // - for each scene frame, extract RGBD sample
-        vector<Sample> realSamples = extractSceneSamplesWadim(bench.frames,bench.cam,model_index[model_name]);
+        vector<Sample> realSamples = extractSceneSamplesPaul(bench.frames,bench.cam,model_index[model_name]);
 
         // - shuffle the samples
         random_shuffle(realSamples.begin(), realSamples.end());

@@ -47,7 +47,7 @@ int main(int argc, char *argv[])
     networkSolver solver(network_path, hdf5_path);
 
     // Generate the data set
-    // generator.createSceneSamplesAndTemplates(vector<string>({"ape","bowl","cam"}));
+    //generator.createSceneSamplesAndTemplates(vector<string>({"ape","iron","cam"}));
 
 
     if (GPU)
@@ -55,11 +55,11 @@ int main(int argc, char *argv[])
 
 
     // Train the network online
-    solver.trainNetWang(vector<string>({"ape","bowl","cam"}), "manifold_wang", 0);
+    //solver.trainNetWang(vector<string>({"ape","iron","cam"}), "manifold_wang", 0);
 
     // Test the network
-    // solv.testNet();
-     solver.testKNN(vector<string>({"ape","bowl","cam"}));
+     solver.testNet();
+     solver.testKNN(vector<string>({"ape","iron","cam"}));
 
     return 0;
 }

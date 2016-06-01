@@ -495,21 +495,23 @@ Mat networkSolver::computeDescriptors(caffe::Net<float> &CNN, vector<Sample> sam
 
 void networkSolver::testNet()
 {
-    caffe::Net<float> CNN(network_path + "manifold_test.prototxt", caffe::TEST);
-    CNN.CopyTrainedLayersFrom(network_path + "manifold_iter_25000.caffemodel");
+    caffe::Net<float> CNN(network_path + "manifold_wang.prototxt", caffe::TEST);
+    CNN.CopyTrainedLayersFrom("manifold_wang_iter_25000.caffemodel");
 
     vector<Sample> ape = h5.read(hdf5_path + "templates_ape.h5");
-    ape.resize(301);
     Mat ape_descs = computeDescriptors(CNN,ape);
 
-
-    vector<Sample> driller = h5.read(hdf5_path + "templates_driller.h5");
-    driller.resize(301);
+    vector<Sample> driller = h5.read(hdf5_path + "templates_iron.h5");
     Mat driller_descs = computeDescriptors(CNN,driller);
+
+    vector<Sample> cam = h5.read(hdf5_path + "templates_cam.h5");
+    Mat cam_descs = computeDescriptors(CNN,cam);
+
 
     Mat descs;
     descs.push_back(ape_descs);
     descs.push_back(driller_descs);
+    descs.push_back(cam_descs);
 
     cerr << descs << endl;
 
@@ -517,8 +519,9 @@ void networkSolver::testNet()
     viz::Viz3d lol;
     cv::Mat vizMat(descs.rows,1,CV_32FC3, descs.data);
     cv::Mat colorMat;
-    colorMat.push_back(Mat(301,1,CV_8UC3,Scalar(255,0,0)));
-    colorMat.push_back(Mat(301,1,CV_8UC3,Scalar(0,255,0)));
+    colorMat.push_back(Mat(89,1,CV_8UC3,Scalar(255,0,0)));
+    colorMat.push_back(Mat(89,1,CV_8UC3,Scalar(0,255,0)));
+    colorMat.push_back(Mat(89,1,CV_8UC3,Scalar(0,0,255)));
 
     lol.showWidget("cloud",viz::WCloud(vizMat,colorMat));
     //lol.setViewerPose(cv::Affine3f::Identity());
@@ -549,7 +552,7 @@ void networkSolver::testKNN(vector<string> used_models)
 
     // Load the snapshot
     caffe::Net<float> CNN(network_path + "manifold_wang.prototxt", caffe::TEST);
-    CNN.CopyTrainedLayersFrom(network_path + "manifold_iter_25000.caffemodel");
+    CNN.CopyTrainedLayersFrom("manifold_wang_iter_25000.caffemodel");
 
     // Get the test data
     Mat DBfeats, DBtest;
@@ -604,7 +607,7 @@ void networkSolver::testKNN(vector<string> used_models)
                 }
 
             // -- compute angular difference
-            cout << "Angular difference: " << sampleQuat.angularDistance(kNNQuat) << endl;
+            cout << "Angular difference: " << sampleQuat.angularDistance(kNNQuat)*180.f/M_PI << endl;
             waitKey();
         }
     }
