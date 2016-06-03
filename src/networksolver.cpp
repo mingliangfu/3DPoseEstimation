@@ -392,7 +392,7 @@ void networkSolver::trainNetWang(vector<string> used_models, string net_name, in
     caffe::SGDSolver<float> *solver = new caffe::SGDSolver<float>(solver_param);
     if (resume_iter>0)
     {
-        string resume_file = network_path + net_name + "_iter_" + to_string(resume_iter) + ".solverstate";
+        string resume_file = net_name + "_iter_" + to_string(resume_iter) + ".solverstate";
         solver->Restore(resume_file.c_str());
     }
 

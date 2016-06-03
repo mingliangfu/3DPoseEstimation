@@ -107,9 +107,8 @@ layer {
   } 
 } 
  
- 
 layer { 
-  name: "loss" 
+  name: "loss_trip" 
   type: "TripletLoss" 
   bottom: "ip2" 
   bottom: "ip2" 
@@ -122,3 +121,15 @@ layer {
   } 
  include {phase: TRAIN}
 } 
+
+
+layer {
+  name: "binarization"
+  type: "BinarizationLoss"
+  bottom: "ip2"
+  bottom: "ip2"
+  top: "loss_bin"
+  include{phase: TRAIN}
+}
+
+

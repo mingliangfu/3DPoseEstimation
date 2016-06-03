@@ -5,7 +5,7 @@ CONFIG -= app_bundle
 
 
 LIBS +=  -L/usr/local/lib -L/usr/lib/x86_64-linux-gnu/hdf5/serial/ -L/opt/tum/external/lib
-INCLUDEPATH += /usr/local/include /usr/include/eigen3 /usr/include/hdf5/serial/ $$PWD/include/ /opt/tum/external/include
+INCLUDEPATH += /usr/local/include /usr/include/eigen3 /usr/include/hdf5/serial/ $$PWD/include/ /opt/tum/external/include /usr/local/cuda-8.0/include/
 
 
 QMAKE_CXXFLAGS += -std=c++11 -march=native -O3

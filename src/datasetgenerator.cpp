@@ -289,7 +289,7 @@ void datasetGenerator::createSceneSamplesAndTemplates(vector<string> used_models
         vector<Sample> synthSamples = createTemplatesWadim(model,bench.cam,model_index[model_name], subdivTmpl+1);
 
         // - shuffle the samples
-        random_shuffle(templates.begin(), templates.end());
+        //random_shuffle(templates.begin(), templates.end());
         random_shuffle(synthSamples.begin(), synthSamples.end());
 
         // - store realSamples to HDF5 files

@@ -296,7 +296,6 @@ bool Model::loadPLY(string filename)
         return false;
     }
 
-
     cv::viz::Mesh mesh = cv::viz::Mesh::load(filename);
 
     m_points.resize(mesh.cloud.cols);
@@ -332,11 +331,10 @@ bool Model::loadPLY(string filename)
     // Process colors
     for (Vector3f &c : m_colors) c /= 255.0f; // Normalized color for opengl
 
-    //for (Vector3f &p : m_points) p *= 0.001f;//savePLY(filename);return false;
 
     computeBoundingBox();
     computeVertexNormals();
-    computeLocalCoordsColors();
+    //computeLocalCoordsColors();
     bindVBOs();
     //subsampleCloud(m_cube_size);
     m_diameter = (bb_max - bb_min).norm();
