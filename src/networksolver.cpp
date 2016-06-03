@@ -128,18 +128,15 @@ void networkSolver::trainNet(string net_name, int resume_iter)
 
     // Set network parameters
     caffe::SolverParameter solver_param;
-    solver_param.set_base_lr(0.001);
+    solver_param.set_base_lr(0.005);
     solver_param.set_momentum(0.9);
-    solver_param.set_weight_decay(0.0005);
+    solver_param.set_weight_decay(0.001);
 
     solver_param.set_solver_type(caffe::SolverParameter_SolverType_SGD);
 
-    solver_param.set_stepsize(5000);
+    solver_param.set_stepsize(15000);
     solver_param.set_lr_policy("step");
     solver_param.set_gamma(0.9);
-
-    int max_iters = 50000;
-    solver_param.set_max_iter(max_iters);
 
     solver_param.set_snapshot(20000);
     solver_param.set_snapshot_prefix(net_name);
@@ -165,7 +162,7 @@ void networkSolver::trainNet(string net_name, int resume_iter)
 
     vector<Sample> batch;
     int epoch_iter = nr_objects * nr_training_poses / (batch_size/triplet_size);
-    int num_epochs = 10;
+    int num_epochs = 50;
     int training_rounds = 3;
 
     // Perform training

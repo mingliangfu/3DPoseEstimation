@@ -88,6 +88,8 @@ Mat datasetManager::samplePatchWithScale(Mat &color, Mat &depth, int center_x, i
     color(cut).copyTo(temp_col);
     depth(cut).copyTo(temp_dep);
 
+    Mat bg = (temp_dep == 0);
+
     // Convert to float and rescale to [-1,1]
     temp_col.convertTo(temp_col,CV_32FC3,1/255.f);
     temp_col = (temp_col-0.5f)*2.f;
