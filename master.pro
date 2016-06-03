@@ -29,14 +29,15 @@ macx: {
 #QMAKE_LFLAGS += -fsanitize=address
 
 SOURCES += main.cpp  src/sphere.cpp  src/painter.cpp  src/model.cpp  \
-    src/datasetgenerator.cpp \
     src/networksolver.cpp \
-    src/hdf5handler.cpp
+    src/hdf5handler.cpp \
+    src/datasetmanager.cpp
 
-HEADERS += include/sphere.h include/painter.h include/model.h include/datasetgenerator.h \
+HEADERS += include/sphere.h include/painter.h include/model.h \
     include/datatypes.h \
     include/networksolver.h \
-    include/hdf5handler.h
+    include/hdf5handler.h \
+    include/datasetmanager.h
 
 
 

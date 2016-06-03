@@ -1,6 +1,6 @@
-#include "datasetgenerator.h"
+#include "datasetmanager.h"
 
-datasetGenerator::datasetGenerator(string dataset_path, string hdf5_path):
+datasetManager::datasetManager(string dataset_path, string hdf5_path):
                 dataset_path(dataset_path), hdf5_path(hdf5_path)
 {
     vector<string> models = {"ape","benchvise","bowl","cam","can","cat", "cup","driller",
@@ -14,7 +14,7 @@ datasetGenerator::datasetGenerator(string dataset_path, string hdf5_path):
     }
 }
 
-Benchmark datasetGenerator::loadLinemodBenchmark(string linemod_path, string sequence, int count /*=-1*/)
+Benchmark datasetManager::loadLinemodBenchmark(string linemod_path, string sequence, int count /*=-1*/)
 {
     string dir_string = linemod_path + sequence;
     cerr << "  - loading benchmark " << dir_string << endl;
@@ -66,7 +66,7 @@ Benchmark datasetGenerator::loadLinemodBenchmark(string linemod_path, string seq
 }
 
 // Takes a color and depth frame and samples a normalized 4-channel patch at the given center position and z-scale
-Mat datasetGenerator::samplePatchWithScale(Mat &color, Mat &depth, int center_x, int center_y, float z, float fx, float fy)
+Mat datasetManager::samplePatchWithScale(Mat &color, Mat &depth, int center_x, int center_y, float z, float fx, float fy)
 {
     // Make a cut of metric size m
     float m = 0.2f;
@@ -112,7 +112,7 @@ Mat datasetGenerator::samplePatchWithScale(Mat &color, Mat &depth, int center_x,
     return final;
 }
 
-vector<Sample> datasetGenerator::extractSceneSamplesPaul(vector<Frame,Eigen::aligned_allocator<Frame>> &frames, Matrix3f &cam, int index)
+vector<Sample> datasetManager::extractSceneSamplesPaul(vector<Frame,Eigen::aligned_allocator<Frame>> &frames, Matrix3f &cam, int index)
 {
     vector<Sample> samples;
     for (Frame &f : frames)
@@ -136,7 +136,7 @@ vector<Sample> datasetGenerator::extractSceneSamplesPaul(vector<Frame,Eigen::ali
     return samples;
 }
 
-vector<Sample> datasetGenerator::extractSceneSamplesWadim(vector<Frame,Eigen::aligned_allocator<Frame>> &frames, Matrix3f &cam, int index)
+vector<Sample> datasetManager::extractSceneSamplesWadim(vector<Frame,Eigen::aligned_allocator<Frame>> &frames, Matrix3f &cam, int index)
 {
     vector<Sample> samples;
     for (Frame &f : frames)
@@ -164,7 +164,7 @@ vector<Sample> datasetGenerator::extractSceneSamplesWadim(vector<Frame,Eigen::al
     return samples;
 }
 
-vector<Sample> datasetGenerator::createTemplatesPaul(Model &model, Matrix3f &cam, int index)
+vector<Sample> datasetManager::createTemplatesPaul(Model &model, Matrix3f &cam, int index)
 {
 
     ifstream file(dataset_path + "paul/camPositionsElAz.txt");
@@ -217,16 +217,15 @@ vector<Sample> datasetGenerator::createTemplatesPaul(Model &model, Matrix3f &cam
         samples.push_back(sample);
     }
     return samples;
-
 }
 
-vector<Sample> datasetGenerator::createTemplatesWadim(Model &model,Matrix3f &cam, int index, int subdiv)
+vector<Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, int index, int subdiv)
 {
 
     // Create synthetic views
     SphereRenderer sphere(cam);
     Vector3f scales(0.4, 1.1, 1.0);     // Render from 0.4 meters
-    Vector3f in_plane_rots(-0,15,10);  // Render in_plane_rotations from -45 degree to 45 degree in 15degree steps
+    Vector3f in_plane_rots(0,1,0);  // Render in_plane_rotations from -45 degree to 45 degree in 15degree steps
     vector<RenderView, Eigen::aligned_allocator<RenderView> > views =
             sphere.createViews(model,subdiv,scales,in_plane_rots,true,false,false);    // Equidistant sphere sampling with recursive level subdiv
 
@@ -253,7 +252,7 @@ vector<Sample> datasetGenerator::createTemplatesWadim(Model &model,Matrix3f &cam
 
 }
 
-void datasetGenerator::createSceneSamplesAndTemplates(vector<string> used_models)
+void datasetManager::createSceneSamplesAndTemplates(vector<string> used_models)
 {
 
     for (int modelId = 0; modelId < used_models.size(); ++modelId) {
@@ -274,9 +273,6 @@ void datasetGenerator::createSceneSamplesAndTemplates(vector<string> used_models
         // - for each scene frame, extract RGBD sample
         vector<Sample> realSamples = extractSceneSamplesPaul(bench.frames,bench.cam,model_index[model_name]);
 
-        // - shuffle the samples
-        random_shuffle(realSamples.begin(), realSamples.end());
-
         // - store realSamples to HDF5 files
         h5.write(hdf5_path + "realSamples_" + model_name +".h5", realSamples);
         // for (Sample &s : realSamples) showRGBDPatch(s.data);
@@ -284,13 +280,9 @@ void datasetGenerator::createSceneSamplesAndTemplates(vector<string> used_models
         // === Synthetic data ===
         clog << "  - render synthetic data:" << endl;
         // - create synthetic samples and templates
-        int subdivTmpl = 2; // sphere subdivision factor for templates
+        int subdivTmpl = 3; // sphere subdivision factor for templates
         vector<Sample> templates = createTemplatesWadim(model,bench.cam,model_index[model_name], subdivTmpl);
         vector<Sample> synthSamples = createTemplatesWadim(model,bench.cam,model_index[model_name], subdivTmpl+1);
-
-        // - shuffle the samples
-        //random_shuffle(templates.begin(), templates.end());
-        random_shuffle(synthSamples.begin(), synthSamples.end());
 
         // - store realSamples to HDF5 files
         h5.write(hdf5_path + "templates_" + model_name + ".h5", templates);
@@ -300,5 +292,101 @@ void datasetGenerator::createSceneSamplesAndTemplates(vector<string> used_models
     }
 }
 
+void datasetManager::generateDatasets(vector<string> used_models, vector<vector<Sample>>& training_set, vector<vector<Sample>>& test_set, vector<vector<Sample>>& templates)
+{
+    training_set.clear();
+    test_set.clear();
+    templates.clear();
+    int nr_objects = used_models.size();
 
+    for (string &seq : used_models)
+    {
+        // Read the data from hdf5 files
+        vector<Sample> train_real(h5.read(hdf5_path + "realSamples_" + seq + ".h5"));
+        vector<Sample> train_synth(h5.read(hdf5_path + "synthSamples_" + seq + ".h5"));
+        templates.push_back(h5.read(hdf5_path + "templates_" + seq + ".h5"));
+        test_set.push_back(vector<Sample>());
+
+        // Compute sizes and quaternions
+        int nr_template_poses = templates[0].size();
+        int nr_synth_poses = train_synth.size();
+        int nr_real_poses = train_real.size();
+
+        // - read quaternion poses from templates (they are identical for all objects)
+        vector<Quaternionf, Eigen::aligned_allocator<Quaternionf> > tmpl_quats(nr_template_poses);
+        for  (int i=0; i < nr_template_poses; ++i)
+            for (int j=0; j < 4; ++j)
+                tmpl_quats[i].coeffs()(j) = templates[0][i].label.at<float>(0,1+j);
+
+        // - read quaternion poses from synthetic data
+        vector<Quaternionf, Eigen::aligned_allocator<Quaternionf> > synth_quats(nr_synth_poses);
+        for (size_t i=0; i < nr_synth_poses; ++i)
+            for (int j=0; j < 4; ++j)
+                synth_quats[i].coeffs()(j) = train_synth[i].label.at<float>(0,1+j);
+
+        // - read quaternion poses from real data
+        vector<Quaternionf, Eigen::aligned_allocator<Quaternionf> > real_quats(nr_real_poses);
+        for (size_t i=0; i < nr_real_poses; ++i)
+            for (int j=0; j < 4; ++j)
+                real_quats[i].coeffs()(j) = train_real[i].label.at<float>(0,1+j);
+
+        // Find the closest templates for each real sample
+        vector<vector<int>> maxSimTmpl(nr_template_poses, vector<int>());
+        for (int real_sample = 0; real_sample < nr_real_poses; ++real_sample)
+        {
+            float best_dist = numeric_limits<float>::max();
+            int sim_tmpl;
+            for (int tmpl = 0; tmpl < nr_template_poses; tmpl++)
+            {
+                float temp_dist = real_quats[real_sample].angularDistance(tmpl_quats[tmpl]);
+                if (temp_dist >= best_dist) continue;
+                best_dist = temp_dist;
+                sim_tmpl = tmpl;
+            }
+            maxSimTmpl[sim_tmpl].push_back(real_sample);
+        }
+
+        // Divide between the training and test sets ~50/50
+        for (int tmpl = 0; tmpl < nr_template_poses; ++tmpl) {
+            if (!maxSimTmpl[tmpl].empty()) {
+                // - to training set
+                for (int i = 0; i < ceil(maxSimTmpl[tmpl].size()/2.0); ++i) {
+                    train_synth.push_back(train_real[maxSimTmpl[tmpl][i]]);
+                }
+                // - to test set
+                for (int i = ceil(maxSimTmpl[tmpl].size()/2.0); i < maxSimTmpl[tmpl].size(); ++i) {
+                    test_set.back().push_back(train_real[maxSimTmpl[tmpl][i]]);
+                }
+            }
+        }
+        // Update the training set
+        training_set.push_back(train_synth);
+    }
+
+    // Crop and shuffle the sets
+    int min_training = numeric_limits<int>::max(), min_test = numeric_limits<int>::max();
+    for (int object = 0; object < nr_objects; ++object) {
+        if (min_training >= training_set[object].size()) min_training = training_set[object].size();
+        if (min_test >= test_set[object].size()) min_test = test_set[object].size();
+    }
+    for (int object = 0; object < nr_objects; ++object) {
+        training_set[object].resize(min_training);
+        test_set[object].resize(min_test);
+        random_shuffle(training_set[object].begin(), training_set[object].end());
+        random_shuffle(test_set[object].begin(), test_set[object].end());
+    }
+}
+
+void datasetManager::addNoiseToSynthData(int copies, vector<vector<Sample>>& trainingSet)
+{
+    for (int copy = 0; copy < copies; ++copy) {
+        for (int object = 0; object < trainingSet.size(); ++object) {
+            for (int pose = 0; pose < trainingSet[object].size(); ++pose) {
+                // create a new image, add noise, push it back to the training set
+//                trainingSet[object][pose].push_back(noise_image);
+            }
+        }
+    }
+
+}
 

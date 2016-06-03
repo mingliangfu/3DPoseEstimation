@@ -1,5 +1,5 @@
-#ifndef DATASETGENERATOR_H
-#define DATASETGENERATOR_H
+#ifndef DATASETMANAGER_H
+#define DATASETMANAGER_H
 
 #include <Eigen/Geometry>
 #include <Eigen/StdVector>
@@ -24,10 +24,10 @@ using namespace std;
 using namespace cv;
 using namespace boost;
 
-class datasetGenerator
+class datasetManager
 {
 public:
-    datasetGenerator(string dataset_path, string hdf5_path);
+    datasetManager(string dataset_path, string hdf5_path);
     Benchmark loadLinemodBenchmark(string linemod_path, string sequence, int count=-1);
     Mat samplePatchWithScale(Mat &color, Mat &depth, int center_x, int center_y, float z, float fx, float fy);
     vector<Sample> extractSceneSamplesPaul(vector<Frame, Eigen::aligned_allocator<Frame>> &frames, Matrix3f &cam, int index);
@@ -36,6 +36,8 @@ public:
     vector<Sample> createTemplatesWadim(Model &model, Matrix3f &cam, int index, int subdiv);
     void createSceneSamplesAndTemplates(vector<string> used_models);
     void saveSamples();
+    void generateDatasets(vector<string> used_models, vector<vector<Sample>>& trainingSet, vector<vector<Sample>>& testSet, vector<vector<Sample>>& templates);
+    void addNoiseToSynthData(int copies, vector<vector<Sample>>& trainingSet);
 private:
     string dataset_path, hdf5_path, network_path;
     vector<string> models;
@@ -44,4 +46,4 @@ private:
 
 };
 
-#endif // DATASETGENERATOR_H
+#endif // DATASETMANAGER_H
