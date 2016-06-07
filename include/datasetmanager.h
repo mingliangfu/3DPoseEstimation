@@ -37,7 +37,7 @@ public:
     void createSceneSamplesAndTemplates(vector<string> used_models);
     void saveSamples();
     void generateDatasets(vector<string> used_models, vector<vector<Sample>>& trainingSet, vector<vector<Sample>>& testSet, vector<vector<Sample>>& templates);
-    void addNoiseToSynthData(int copies, vector<vector<Sample>>& trainingSet);
+    void addNoiseToSynthData(unsigned int copies, vector<vector<Sample>>& trainingSet);
 private:
     string dataset_path, hdf5_path, network_path;
     vector<string> models;

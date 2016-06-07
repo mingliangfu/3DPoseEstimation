@@ -235,7 +235,7 @@ vector<Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, 
     for (RenderView &v : views)
     {
         // Instead of taking object centroid, take the surface point as central sample point
-        float z = v.dep.at<float>(cam(1,2),cam(0,2));
+        //        float z = v.dep.at<float>(cam(1,2),cam(0,2));
         //        assert(z>0.0f);
 
         Sample sample;
@@ -256,8 +256,7 @@ vector<Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, 
 
 void datasetManager::createSceneSamplesAndTemplates(vector<string> used_models)
 {
-
-    for (int modelId = 0; modelId < used_models.size(); ++modelId) {
+    for (size_t modelId = 0; modelId < used_models.size(); ++modelId) {
 
         string model_name = used_models[modelId];
 
@@ -310,35 +309,35 @@ void datasetManager::generateDatasets(vector<string> used_models, vector<vector<
         test_set.push_back(vector<Sample>());
 
         // Compute sizes and quaternions
-        int nr_template_poses = templates[0].size();
-        int nr_synth_poses = train_synth.size();
-        int nr_real_poses = train_real.size();
+        unsigned int nr_template_poses = templates[0].size();
+        unsigned int nr_synth_poses = train_synth.size();
+        unsigned int nr_real_poses = train_real.size();
 
         // - read quaternion poses from templates (they are identical for all objects)
         vector<Quaternionf, Eigen::aligned_allocator<Quaternionf> > tmpl_quats(nr_template_poses);
-        for  (int i=0; i < nr_template_poses; ++i)
-            for (int j=0; j < 4; ++j)
+        for  (size_t i=0; i < nr_template_poses; ++i)
+            for (size_t j=0; j < 4; ++j)
                 tmpl_quats[i].coeffs()(j) = templates[0][i].label.at<float>(0,1+j);
 
         // - read quaternion poses from synthetic data
         vector<Quaternionf, Eigen::aligned_allocator<Quaternionf> > synth_quats(nr_synth_poses);
         for (size_t i=0; i < nr_synth_poses; ++i)
-            for (int j=0; j < 4; ++j)
+            for (size_t j=0; j < 4; ++j)
                 synth_quats[i].coeffs()(j) = train_synth[i].label.at<float>(0,1+j);
 
         // - read quaternion poses from real data
         vector<Quaternionf, Eigen::aligned_allocator<Quaternionf> > real_quats(nr_real_poses);
         for (size_t i=0; i < nr_real_poses; ++i)
-            for (int j=0; j < 4; ++j)
+            for (size_t j=0; j < 4; ++j)
                 real_quats[i].coeffs()(j) = train_real[i].label.at<float>(0,1+j);
 
         // Find the closest templates for each real sample
         vector<vector<int>> maxSimTmpl(nr_template_poses, vector<int>());
-        for (int real_sample = 0; real_sample < nr_real_poses; ++real_sample)
+        for (size_t real_sample = 0; real_sample < nr_real_poses; ++real_sample)
         {
             float best_dist = numeric_limits<float>::max();
-            int sim_tmpl;
-            for (int tmpl = 0; tmpl < nr_template_poses; tmpl++)
+            unsigned int sim_tmpl = 0;
+            for (size_t tmpl = 0; tmpl < nr_template_poses; tmpl++)
             {
                 float temp_dist = real_quats[real_sample].angularDistance(tmpl_quats[tmpl]);
                 if (temp_dist >= best_dist) continue;
@@ -349,14 +348,14 @@ void datasetManager::generateDatasets(vector<string> used_models, vector<vector<
         }
 
         // Divide between the training and test sets ~50/50
-        for (int tmpl = 0; tmpl < nr_template_poses; ++tmpl) {
+        for (size_t tmpl = 0; tmpl < nr_template_poses; ++tmpl) {
             if (!maxSimTmpl[tmpl].empty()) {
                 // - to training set
-                for (int i = 0; i < ceil(maxSimTmpl[tmpl].size()/2.0); ++i) {
+                for (size_t i = 0; i < ceil(maxSimTmpl[tmpl].size()/2.0); ++i) {
                     train_synth.push_back(train_real[maxSimTmpl[tmpl][i]]);
                 }
                 // - to test set
-                for (int i = ceil(maxSimTmpl[tmpl].size()/2.0); i < maxSimTmpl[tmpl].size(); ++i) {
+                for (size_t i = ceil(maxSimTmpl[tmpl].size()/2.0); i < maxSimTmpl[tmpl].size(); ++i) {
                     test_set.back().push_back(train_real[maxSimTmpl[tmpl][i]]);
                 }
             }
@@ -366,7 +365,7 @@ void datasetManager::generateDatasets(vector<string> used_models, vector<vector<
     }
 
     // Crop and shuffle the sets
-    int min_training = numeric_limits<int>::max(), min_test = numeric_limits<int>::max();
+    unsigned int min_training = numeric_limits<int>::max(), min_test = numeric_limits<int>::max();
     for (int object = 0; object < nr_objects; ++object) {
         if (min_training >= training_set[object].size()) min_training = training_set[object].size();
         if (min_test >= test_set[object].size()) min_test = test_set[object].size();
@@ -379,11 +378,11 @@ void datasetManager::generateDatasets(vector<string> used_models, vector<vector<
     }
 }
 
-void datasetManager::addNoiseToSynthData(int copies, vector<vector<Sample>>& trainingSet)
+void datasetManager::addNoiseToSynthData(unsigned int copies, vector<vector<Sample>>& trainingSet)
 {
-    for (int copy = 0; copy < copies; ++copy) {
-        for (int object = 0; object < trainingSet.size(); ++object) {
-            for (int pose = 0; pose < trainingSet[object].size(); ++pose) {
+    for (size_t copy = 0; copy < copies; ++copy) {
+        for (size_t object = 0; object < trainingSet.size(); ++object) {
+            for (size_t pose = 0; pose < trainingSet[object].size(); ++pose) {
                 // create a new image, add noise, push it back to the training set
 //                trainingSet[object][pose].push_back(noise_image);
             }

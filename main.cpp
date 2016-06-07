@@ -54,11 +54,11 @@ int main(int argc, char *argv[])
         caffe::Caffe::set_mode(caffe::Caffe::GPU);
 
     // Train the network online
-//    solver.trainNet("manifold_wang", 0);
+    solver.trainNet("manifold_wang", 0);
 
     // Test the network
-    solver.testManifold("manifold_wang", 25000);
-    solver.testKNN("manifold_wang", 25000, vector<string>({"ape","iron","cam"}));
+    //    solver.testManifold("manifold_wang", 25000);
+    //    solver.testKNN("manifold_wang", 25000, vector<string>({"ape","iron","cam"}));
 
     return 0;
 }

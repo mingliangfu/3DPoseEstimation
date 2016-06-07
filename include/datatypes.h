@@ -60,11 +60,11 @@ static inline void loadbar( string label, unsigned int x, unsigned int n, unsign
     if ( (x != n) && (x % (n/100+1) != 0) ) return;
 
     float ratio  =  x/(float)n;
-    int   c      =  ratio * w;
+    unsigned int   c      =  ratio * w;
 
     clog << label << setw(3) << (int)(ratio*100) << "% [";
-    for (int x=0; x<c; x++) clog << "=";
-    for (int x=c; x<w; x++) clog << " ";
+    for (size_t x=0; x<c; x++) clog << "=";
+    for (size_t x=c; x<w; x++) clog << " ";
     clog << "]\r" << flush;
 
     if ( x == n ) clog << endl;
