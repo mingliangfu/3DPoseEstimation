@@ -29,6 +29,7 @@ public:
     Mat computeDescriptors(caffe::Net<float> &CNN, vector<Sample> samples);
     Mat showRGBDPatch(Mat &patch, bool show=true);
     bool bootstrap(string net_name, int resume_iter);
+    void evaluateNetwork(string net_name, int resume_iter);
 private:
     hdf5Handler h5;
     string network_path;
@@ -42,7 +43,7 @@ private:
     vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>> tmpl_quats;
     datasetManager db_manager;
     unordered_map<string,int> model_index;
-    vector<vector<vector<int>>> maxSimKNNTmpl;
+    vector<vector<vector<int>>> maxSimTmpl, maxSimKNNTmpl;
 
     unsigned int nr_objects;
     unsigned int nr_training_poses;

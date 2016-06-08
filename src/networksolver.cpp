@@ -24,8 +24,50 @@ networkSolver::networkSolver(vector<string> used_models, string network_path, st
         for (size_t j=0; j < 4; ++j)
             tmpl_quats[i].coeffs()(j) = templates[0][i].label.at<float>(0,1+j);
 
+    // Read quaternion poses from training data
+    training_quats.assign(nr_objects, vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>());
+    for  (size_t i = 0; i < nr_objects; ++i) {
+        training_quats[i].resize(training_set[i].size());
+        for (size_t k = 0; k < training_quats[i].size(); ++k)
+            for (int j = 0; j < 4; ++j)
+                training_quats[i][k].coeffs()(j) = training_set[i][k].label.at<float>(0,1+j);
+    }
+
+    // Calculate maxSimTmpl: find the 2 most similar templates
+    maxSimTmpl.assign(nr_objects, vector<vector<int>>(nr_training_poses, vector<int>()));
+    for (int object = 0; object < nr_objects; ++object)
+    {
+        for (int training_pose = 0; training_pose < nr_training_poses; ++training_pose)
+        {
+            float best_dist = numeric_limits<float>::max();
+            float best_dist2 = numeric_limits<float>::max(); // second best
+            int sim_tmpl;
+
+            // - push back the first most similar template
+            for (size_t tmpl_pose = 0; tmpl_pose < nr_template_poses; tmpl_pose++)
+            {
+                float temp_dist = training_quats[object][training_pose].angularDistance(tmpl_quats[tmpl_pose]);
+                if (temp_dist >= best_dist) continue;
+                best_dist = temp_dist;
+                sim_tmpl = tmpl_pose;
+            }
+            maxSimTmpl[object][training_pose].push_back(sim_tmpl);
+
+            // - push back the second most similar template
+            for (size_t tmpl_pose1 = 0; tmpl_pose1 < nr_template_poses; tmpl_pose1++)
+            {
+                float temp_dist = training_quats[object][training_pose].angularDistance(tmpl_quats[tmpl_pose1]);
+                if (temp_dist >= best_dist2 || temp_dist == best_dist) continue;
+                best_dist2 = temp_dist;
+                sim_tmpl = tmpl_pose1;
+            }
+            maxSimTmpl[object][training_pose].push_back(sim_tmpl);
+
+        }
+    }
+
     // Shuffle the training set and recalculate the quaternions
-    shuffleTrainingSet();
+//    shuffleTrainingSet();
 
 }
 
@@ -45,36 +87,6 @@ void networkSolver::shuffleTrainingSet()
                 training_quats[i][k].coeffs()(j) = training_set[i][k].label.at<float>(0,1+j);
     }
 
-//    // Calculate maxSimTmpl: find the 2 most similar templates
-//    for (int object = 0; object < nr_objects; ++object)
-//    {
-//        for (int training_pose = 0; training_pose < nr_training_poses; ++training_pose)
-//        {
-//            float best_dist = numeric_limits<float>::max();
-//            float best_dist2 = numeric_limits<float>::max(); // second best
-//            int sim_tmpl;
-
-//            // - push back the first most similar template
-//            for (size_t tmpl_pose = 0; tmpl_pose < nr_template_poses; tmpl_pose++)
-//            {
-//                float temp_dist = training_quats[training_pose].angularDistance(tmpl_quats[tmpl_pose]);
-//                if (temp_dist >= best_dist) continue;
-//                best_dist = temp_dist;
-//                sim_tmpl = tmpl_pose;
-//            }
-//            maxSimTmpl[object][training_pose].push_back(sim_tmpl);
-
-//            // - push back the second most similar template
-//            for (size_t tmpl_pose = 0; tmpl_pose < nr_template_poses; tmpl_pose++)
-//            {
-//                float temp_dist = training_quats[obj][training_sample].angularDistance(tmpl_quats[temp]);
-//                if (temp_dist >= best_dist2 || temp_dist == best_dist) continue;
-//                best_dist2 = temp_dist;
-//                sim_tmpl = tmpl_pose;
-//            }
-//            maxSimTmpl[object][training_pose].push_back(sim_tmpl);
-//        }
-//    }
 
 }
 
@@ -94,31 +106,13 @@ vector<Sample> networkSolver::buildBatch(int batch_size, int iter, bool bootstra
         unsigned int training_pose = linearId / nr_objects;
         unsigned int object = linearId % nr_objects;
 
-        // Pull random scene sample and find closest pose neighbor from templates
-        float best_dist = numeric_limits<float>::max();
-        float best_dist2 = numeric_limits<float>::max(); // second best
-
-        // Remember the anchor
+        // Anchor: training set sample
         triplet.anchor = training_set[object][training_pose];
-
-        // Find the puller: most similar template
-        for (size_t temp = 0; temp < nr_template_poses; temp++)
-        {
-            float temp_dist = training_quats[object][training_pose].angularDistance(tmpl_quats[temp]);
-            if (temp_dist >= best_dist) continue;
-            puller = temp;
-            best_dist = temp_dist;
-        }
+        // Puller: most similar template
+        puller = maxSimTmpl[object][training_pose][0];
         triplet.puller = templates[object][puller];
-
-        // Find pusher0: second most similar template
-        for (size_t temp = 0; temp < nr_template_poses; temp++)
-        {
-            float temp_dist = training_quats[object][training_pose].angularDistance(tmpl_quats[temp]);
-            if (temp_dist >= best_dist2 || temp_dist == best_dist) continue;
-            pusher0 = temp;
-            best_dist2 = temp_dist;
-        }
+        // Pusher 0: second most similar template
+        pusher0 = maxSimTmpl[object][training_pose][1];
         triplet.pusher0 = templates[object][pusher0];
 
         // Find pusher1: random template
@@ -174,7 +168,7 @@ void networkSolver::trainNet(string net_name, int resume_iter)
     caffe::SolverParameter solver_param;
     solver_param.set_base_lr(0.005);
     solver_param.set_momentum(0.9);
-    solver_param.set_weight_decay(0.001);
+    solver_param.set_weight_decay(0.0005);
 
     solver_param.set_solver_type(caffe::SolverParameter_SolverType_SGD);
 
@@ -206,10 +200,10 @@ void networkSolver::trainNet(string net_name, int resume_iter)
 
     vector<Sample> batch;
     int triplet_size = 5;
-    int num_epochs = 50;
+    int num_epochs = 1;
     int training_rounds = 3;
     int epoch_iter = nr_objects * nr_training_poses / (batch_size/triplet_size);
-//    epoch_iter = 10;
+    epoch_iter = 10;
     bool bootstrapping = false;
 
     // Perform training
@@ -451,10 +445,40 @@ void networkSolver::getTrainingKNN(string net_name, int resume_iter)
         int tmpl_object =  matches[linearId][0].trainIdx / templates[0].size();
         int tmpl_pose =  matches[linearId][0].trainIdx % templates[0].size();
 
+#if 0
+        imshow("query",showRGBDPatch(training_set[query_object][query_pose].data,false));
+        imshow("simKNN",showRGBDPatch(templates[tmpl_object][tmpl_pose].data,false));
+        waitKey();
+#endif
+
         // - store the object and the pose to the maxSimKNNTmpl
         maxSimKNNTmpl[query_object][query_pose].push_back(tmpl_object);
         maxSimKNNTmpl[query_object][query_pose].push_back(tmpl_pose);
     }
+}
+
+void networkSolver::evaluateNetwork(string net_name, int resume_iter)
+{
+    getTrainingKNN(net_name, resume_iter);
+
+    int intra = 0, inter = 0;
+    for (int object = 0; object < nr_objects; ++object)
+    {
+        for (int training_pose = 0; training_pose < nr_training_poses; ++training_pose)
+        {
+#if 0
+            cout << maxSimTmpl[object][training_pose][0] << " == " << maxSimKNNTmpl[object][training_pose][1]<< endl;
+            imshow("query",showRGBDPatch(training_set[object][training_pose].data,false));
+            imshow("sim",showRGBDPatch(templates[object][maxSimTmpl[object][training_pose][0]].data,false));
+            imshow("simKnn",showRGBDPatch(templates[object][maxSimKNNTmpl[object][training_pose][1]].data,false));
+            waitKey();
+#endif
+            if (maxSimTmpl[object][training_pose][0] == maxSimKNNTmpl[object][training_pose][1]) intra++;
+            if (maxSimKNNTmpl[object][training_pose][0] == object) inter++;
+        }
+    }
+    cout << "Intra-class accuracy: " << intra/(float)(nr_objects*nr_training_poses)*100 << endl;
+    cout << "Inter-class accuracy: " << inter/(float)(nr_objects*nr_training_poses)*100 << endl;
 }
 
 
