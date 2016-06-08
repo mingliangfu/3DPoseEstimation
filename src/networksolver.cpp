@@ -94,7 +94,7 @@ vector<Sample> networkSolver::buildBatch(int batch_size, int iter, bool bootstra
 {
     int triplet_size = 5;
     vector<Sample> batch;
-    size_t puller, pusher0, pusher1, pusher2;
+    size_t puller=0, pusher0=0, pusher1=0, pusher2=0;
     TripletWang triplet;
 
     // Random generator for object selection and template selection
@@ -285,7 +285,7 @@ Mat networkSolver::computeDescriptors(caffe::Net<float> &CNN, vector<Sample> sam
             }
             // Copy data memory into Caffe input layer, process batch and copy result back
             input_layer->set_cpu_data(data.data());
-            vector< caffe::Blob<float>* > out = CNN.ForwardPrefilled();
+            vector< caffe::Blob<float>* > out = CNN.Forward();
 
             for (size_t j=0; j < currIdxs.size(); ++j)
                 memcpy(descs.ptr<float>(currIdxs[j]), out[0]->cpu_data() + j*desc_dim, desc_dim*sizeof(float));
@@ -331,7 +331,6 @@ void networkSolver::testManifold(string net_name, int resume_iter)
 Mat networkSolver::showRGBDPatch(Mat &patch, bool show/*=true*/)
 {
     vector<Mat> channels;
-    //cv::split((patch+1.f)*0.5f,channels);
     cv::split(patch,channels);
 
     Mat RGB,D,out(patch.rows,patch.cols*2,CV_32FC3);
