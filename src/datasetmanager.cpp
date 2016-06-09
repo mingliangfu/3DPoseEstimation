@@ -5,6 +5,7 @@ datasetManager::datasetManager(string dataset_path, string hdf5_path):
 {
     vector<string> models = {"ape","benchvise","bowl","cam","can","cat", "cup","driller",
                                  "duck","eggbox","glue","holepuncher","iron","lamp","phone"};
+    rotInv = {0, 0, 1, 0, 0, 0, 2, 0, 0, 2, 2, 0, 0, 0, 0};
 
     // For each object of the dataset
     for (size_t i = 0; i < models.size(); ++i)
@@ -166,7 +167,7 @@ vector<Sample> datasetManager::extractSceneSamplesWadim(vector<Frame,Eigen::alig
     return samples;
 }
 
-vector<Sample> datasetManager::createTemplatesPaul(Model &model, Matrix3f &cam, int index)
+vector<Sample> datasetManager::createTemplatesPaul(Model &model, Matrix3f &cam, int index, int rotInv)
 {
 
     ifstream file(dataset_path + "paul/camPositionsElAz.txt");
@@ -175,23 +176,54 @@ vector<Sample> datasetManager::createTemplatesPaul(Model &model, Matrix3f &cam, 
 
     // Read all camera poses from file (given in elevation and azimuth)
     vector<Matrix3f, Eigen::aligned_allocator<Matrix3f> > camPos;
+    float last_el = 0;
+    int coordId = 0;
     for(Vector2f &v : sphereCoords)
     {
         file >> v(0) >> v(1);
+        if (rotInv == 1)
+        {
+            if (abs(last_el - v(0)) <= 0.01 && coordId != 0 && coordId < 302) {
+                camPos.push_back(camPos.back());
+            } else {
+                // Copied from basetypes.py lines 100-xxx
+                // To move into el=0,az=0 position we first have to rotate 45deg around x
+                AngleAxisf camRot0(M_PI/2,Vector3f(1,0,0));
 
-        // Copied from basetypes.py lines 100-xxx
-        // To move into el=0,az=0 position we first have to rotate 45deg around x
-        AngleAxisf camRot0(M_PI/2,Vector3f(1,0,0));
+                // Build rotation matrix from spherical coordinates
+                AngleAxisf el(v(0),Vector3f(1,0,0));
+                AngleAxisf az(-v(1),Vector3f(0,0,1));
+                Matrix3f camRot = (el*az).toRotationMatrix();
+                camPos.push_back(camRot0*camRot);
+            }
+        } else if (rotInv == 2 && coordId < 302) {
+            if (v(1) > 0) {
+                // Copied from basetypes.py lines 100-xxx
+                // To move into el=0,az=0 position we first have to rotate 45deg around x
+                AngleAxisf camRot0(M_PI/2,Vector3f(1,0,0));
 
-        // Build rotation matrix from spherical coordinates
-        AngleAxisf el(v(0),Vector3f(1,0,0));
-        AngleAxisf az(-v(1),Vector3f(0,0,1));
-        Matrix3f camRot = (el*az).toRotationMatrix();
-        camPos.push_back(camRot0*camRot);
+                // Build rotation matrix from spherical coordinates
+                AngleAxisf el(v(0),Vector3f(1,0,0));
+                AngleAxisf az(-v(1),Vector3f(0,0,1));
+                Matrix3f camRot = (el*az).toRotationMatrix();
+                camPos.push_back(camRot0*camRot);
+            } else {
+                camPos.push_back(camPos.back());
+            }
+        } else {
+            // Copied from basetypes.py lines 100-xxx
+            // To move into el=0,az=0 position we first have to rotate 45deg around x
+            AngleAxisf camRot0(M_PI/2,Vector3f(1,0,0));
+
+            // Build rotation matrix from spherical coordinates
+            AngleAxisf el(v(0),Vector3f(1,0,0));
+            AngleAxisf az(-v(1),Vector3f(0,0,1));
+            Matrix3f camRot = (el*az).toRotationMatrix();
+            camPos.push_back(camRot0*camRot);
+        }
+        last_el = v(0);
+        coordId++;
     }
-
-    // Retain only the 301 template poses
-    //camPos.resize(301);
 
     // Render each and create proper sample
     SphereRenderer renderer;
@@ -221,15 +253,15 @@ vector<Sample> datasetManager::createTemplatesPaul(Model &model, Matrix3f &cam, 
     return samples;
 }
 
-vector<Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, int index, int subdiv)
+vector<Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, int index, int rotInv, int subdiv)
 {
 
     // Create synthetic views
     SphereRenderer sphere(cam);
     Vector3f scales(0.4, 1.1, 1.0);     // Render from 0.4 meters
-    Vector3f in_plane_rots(0,1,0);  // Render in_plane_rotations from -45 degree to 45 degree in 15degree steps
+    Vector3f in_plane_rots(-45,15,45);  // Render in_plane_rotations from -45 degree to 45 degree in 15degree steps
     vector<RenderView, Eigen::aligned_allocator<RenderView> > views =
-            sphere.createViews(model,subdiv,scales,in_plane_rots,true,false,false);    // Equidistant sphere sampling with recursive level subdiv
+            sphere.createViews(model,subdiv,scales,in_plane_rots,true,false,rotInv, subdiv);    // Equidistant sphere sampling with recursive level subdiv
 
     vector<Sample> samples;
     for (RenderView &v : views)
@@ -282,8 +314,11 @@ void datasetManager::createSceneSamplesAndTemplates(vector<string> used_models)
         clog << "  - render synthetic data:" << endl;
         // - create synthetic samples and templates
         int subdivTmpl = 3; // sphere subdivision factor for templates
-        vector<Sample> templates = createTemplatesWadim(model,bench.cam,model_index[model_name], subdivTmpl);
-        vector<Sample> synthSamples = createTemplatesWadim(model,bench.cam,model_index[model_name], subdivTmpl+1);
+        vector<Sample> templates = createTemplatesWadim(model, bench.cam, model_index[model_name], rotInv[model_index[model_name]], subdivTmpl);
+        vector<Sample> synthSamples = createTemplatesWadim(model, bench.cam, model_index[model_name], 0, subdivTmpl+1);
+//        vector<Sample> temp = createTemplatesPaul(model, bench.cam, model_index[model_name], rotInv[model_index[model_name]]);
+//        vector<Sample> templates (temp.begin(),temp.begin() + 301);
+//        vector<Sample> synthSamples (temp.begin() + 302, temp.end());
 
         // - store realSamples to HDF5 files
         h5.write(hdf5_path + "templates_" + model_name + ".h5", templates);
@@ -299,6 +334,7 @@ void datasetManager::generateDatasets(vector<string> used_models, vector<vector<
     test_set.clear();
     templates.clear();
     int nr_objects = used_models.size();
+
 
     for (string &seq : used_models)
     {

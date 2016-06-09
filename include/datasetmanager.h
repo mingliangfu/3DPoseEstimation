@@ -32,8 +32,8 @@ public:
     Mat samplePatchWithScale(Mat &color, Mat &depth, int center_x, int center_y, float z, float fx, float fy);
     vector<Sample> extractSceneSamplesPaul(vector<Frame, Eigen::aligned_allocator<Frame>> &frames, Matrix3f &cam, int index);
     vector<Sample> extractSceneSamplesWadim(vector<Frame, Eigen::aligned_allocator<Frame>> &frames, Matrix3f &cam, int index);
-    vector<Sample> createTemplatesPaul(Model &model, Matrix3f &cam, int index);
-    vector<Sample> createTemplatesWadim(Model &model, Matrix3f &cam, int index, int subdiv);
+    vector<Sample> createTemplatesPaul(Model &model, Matrix3f &cam, int index, int rotInv);
+    vector<Sample> createTemplatesWadim(Model &model, Matrix3f &cam, int index, int rotInv, int subdiv);
     void createSceneSamplesAndTemplates(vector<string> used_models);
     void saveSamples();
     void generateDatasets(vector<string> used_models, vector<vector<Sample>>& trainingSet, vector<vector<Sample>>& testSet, vector<vector<Sample>>& templates);
@@ -42,6 +42,7 @@ private:
     string dataset_path, hdf5_path, network_path;
     vector<string> models;
     unordered_map<string,int> model_index;
+    vector<int> rotInv;
     hdf5Handler h5;
 
 };

@@ -4,6 +4,8 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/calib3d/calib3d.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/viz.hpp>
+#include <opencv2/features2d.hpp>
 
 #include "painter.h"
 #include "sphere.h"
@@ -62,7 +64,7 @@ pair<int,int> SphereRenderer::renderView(Model &model, Isometry3f &pose, Mat &co
     return {x,y};
 }
 /***************************************************************************/
-vector<RenderView, Eigen::aligned_allocator<RenderView> > SphereRenderer::createViews(Model &model,int sphereDep,Vector3f scale, Vector3f rotation, bool skipLowerHemi, bool skipRearPart, bool clip)
+vector<RenderView, Eigen::aligned_allocator<RenderView> > SphereRenderer::createViews(Model &model,int sphereDep,Vector3f scale, Vector3f rotation, bool skipLowerHemi, bool clip, int rotInv, int subdiv)
 {
     assert(m_camera(0,0)!=0);
 
@@ -72,12 +74,17 @@ vector<RenderView, Eigen::aligned_allocator<RenderView> > SphereRenderer::create
 
     vector<RenderView, Eigen::aligned_allocator<RenderView> > out;
 
+    int skipped = 0;
+
     vector<Vector3f> sphere = initSphere(sphereDep);
     for(float currsca : sca)
         for(Vector3f &pos : sphere)
         {
-            if((pos(0) < 0) && skipRearPart) continue;  // Skip negative x-part (for symmetric objects)
+            if((pos(0) < 0) && rotInv == 2) {skipped++; continue;} // Skip negative x-part (for symmetric objects)
+            if((pos(1) < 0 || pos(1) > 0.35/subdiv || pos(0) < 0) && rotInv == 1) {skipped++; continue;} // Store the views with fixed azimuth (y==0) (for rot. inv. objects)
             if((pos(2) < 0) && skipLowerHemi) continue;  // Skip the lower hemisphere of the object
+//            cout << "Pose: " << pos(0) << ", " << pos(1) << ", " << pos(2) << endl;
+
             for(float curr_rot : rots)
             {
                 RenderView view;
@@ -88,6 +95,41 @@ vector<RenderView, Eigen::aligned_allocator<RenderView> > SphereRenderer::create
                 out.push_back(view);
             }
         }
+
+#if 1
+    // Visualize the sphere
+    Mat DBfeats;
+    for(Vector3f &pos : sphere)
+    {
+       if((pos(0) < 0) && rotInv == 2) {skipped++; continue;} // Skip negative x-part (for symmetric objects)
+       if((pos(1) < 0 || pos(1) > 0.35/subdiv || pos(0) < 0) && rotInv == 1) {skipped++; continue;} // Store the views with fixed azimuth (y==0) (for rot. inv. objects)
+       if((pos(2) < 0) && skipLowerHemi) continue;  // Skip the lower hemisphere of the object
+
+       float sz[3] = {pos(0), pos(1), pos(2)};
+       Mat pose = Mat(1, 3, CV_32FC1, &sz);
+       DBfeats.push_back(pose);
+    }
+
+    // Visualize for the case where feat_dim is 3D
+    viz::Viz3d visualizer("Manifold");
+    cv::Mat vizMat(DBfeats.rows,1,CV_32FC3, DBfeats.data);
+    viz::WCloud manifold(vizMat);
+    manifold.setRenderingProperty(viz::POINT_SIZE, 5);
+    visualizer.showWidget("Sphere", manifold);
+    visualizer.spin();
+#endif
+
+    if(rotInv != 0) {
+        std::random_device ran;
+        uniform_int_distribution<size_t> outGen(0, out.size() - 1);
+        int outId = outGen(ran);
+
+        while(out.size() != (out.size() + skipped)) {
+            outId = outGen(ran);
+            out.push_back(out[outId]);
+        }
+    }
+
 
     /*
     for(int i=0; i< sphere.size()-1; ++i)

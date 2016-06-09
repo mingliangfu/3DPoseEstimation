@@ -27,7 +27,6 @@ public:
     void getTrainingKNN(string net_name, int resume_iter);
     void shuffleTrainingSet();
     Mat computeDescriptors(caffe::Net<float> &CNN, vector<Sample> samples);
-    Mat showRGBDPatch(Mat &patch, bool show=true);
     bool bootstrap(string net_name, int resume_iter);
     void evaluateNetwork(string net_name, int resume_iter);
 private:

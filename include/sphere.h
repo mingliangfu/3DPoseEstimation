@@ -42,7 +42,7 @@ public:
 
     pair<int,int> renderView(Model &model, Isometry3f &pose, Mat &col, Mat &dep,bool clipped=true);
 
-    vector<RenderView, Eigen::aligned_allocator<RenderView> > createViews(Model &object,int sphereDep,Vector3f scale, Vector3f rot, bool skipLowerHemi=true, bool skipRearPart=false, bool clip=true);
+    vector<RenderView, Eigen::aligned_allocator<RenderView> > createViews(Model &object, int sphereDep, Vector3f scale, Vector3f rot, bool skipLowerHemi=true, bool clip=true, int rotInv=0, int subdiv=1);
 
     Isometry3f createTransformation(Vector3f &sphere_pt,float scale,float rotation);
 

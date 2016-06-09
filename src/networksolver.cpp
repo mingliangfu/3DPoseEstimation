@@ -328,24 +328,6 @@ void networkSolver::testManifold(string net_name, int resume_iter)
 
 }
 
-Mat networkSolver::showRGBDPatch(Mat &patch, bool show/*=true*/)
-{
-    vector<Mat> channels;
-    //cv::split((patch+1.f)*0.5f,channels);
-    cv::split(patch,channels);
-
-    Mat RGB,D,out(patch.rows,patch.cols*2,CV_32FC3);
-
-    cv::merge(vector<Mat>({channels[0],channels[1],channels[2]}),RGB);
-    RGB.copyTo(out(Rect(0,0,patch.cols,patch.rows)));
-
-    cv::merge(vector<Mat>({channels[3],channels[3],channels[3]}),D);
-    D.copyTo(out(Rect(patch.cols,0,patch.cols,patch.rows)));
-
-    if(show) {imshow("R G B D",out); waitKey();}
-    return out;
-}
-
 void networkSolver::testKNN(string net_name, int resume_iter, vector<string> test_models)
 {
     // Load the snapshot
