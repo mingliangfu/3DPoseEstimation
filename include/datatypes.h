@@ -18,7 +18,7 @@ struct Frame
 {
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     int nr;
-    Mat color, depth, cloud, mask;
+    Mat color, depth, cloud, mask, normals;
     Isometry3f gt;
 };
 

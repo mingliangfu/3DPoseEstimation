@@ -183,58 +183,7 @@ void Model::computeBoundingBox()
     boundingBox.col(6) << bb_max(0),bb_max(1),bb_max(2);
     boundingBox.col(7) << bb_max(0),bb_min(1),bb_max(2);
 }
-/***************************************************************************/
 
-void Model::subsampleCloud(float voxel_size)
-{
-
-    assert(m_points.size() == m_normals.size());
-
-    Vector3f extend = (bb_max-bb_min).cwiseAbs();
-    Vector3i res = Vector3i(1,1,1) + (extend/voxel_size).cast<int>();
-
-    vector<bool> occupancy(res(0)*res(1)*res(2),false);
-    vector<Vector3f> normals(res(0)*res(1)*res(2),Vector3f(0,0,0));
-
-    for(uint i=0; i < m_points.size(); ++i)
-    {
-        Vector3i vox = ((m_points[i]-bb_min)/voxel_size).cast<int>();
-        int index = vox(2)*res(1)*res(0) + vox(1)*res(0)+ vox(0);
-        occupancy[index] = true;
-        normals[index] += m_normals[i];
-    }
-
-    m_subpoints.clear();
-    m_subnormals.clear();
-    m_subcolors.clear();
-    for (int z=0; z < res(2); ++z)
-        for (int y=0; y < res(1); ++y)
-            for (int x=0; x < res(0); ++x)
-            {
-                int index = z*res(1)*res(0) + y*res(0)+ x;
-                if(occupancy[index])
-                {
-                    m_subpoints.push_back(Vector3f(x+0.5f,y+0.5f,z+0.5f)*voxel_size+bb_min);
-                    m_subnormals.push_back(normals[index].normalized());
-                    Vector3f col = m_colors[index]*255.f;
-                    m_subcolors.push_back(Vec3b(col(0),col(1),col(2)));
-                }
-            }
-
-#if 0
-    cv::viz::Viz3d show;
-    cv::Mat points(1,m_points.size(),CV_32FC3, m_points.data());
-    cv::Mat sub(1,m_subpoints.size(),CV_32FC3, m_subpoints.data());
-    cv::Mat nors(1,m_subnormals.size(),CV_32FC3, m_subnormals.data());
-    cv::Mat cols(1,m_subcolors.size(),CV_8UC3, m_subcolors.data());
-    //show.showWidget("original",viz::WCloud(points,cv::viz::Color::green()));
-    show.showWidget("sub",viz::WCloud(sub,cols));
-    show.showWidget("normals",viz::WCloudNormals(sub,nors,1,0.01));
-    show.spin();
-#endif
-
-
-}
 
 /***************************************************************************/
 

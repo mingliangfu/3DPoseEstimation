@@ -166,7 +166,7 @@ void networkSolver::trainNet(string net_name, int resume_iter)
 
     // Set network parameters
     caffe::SolverParameter solver_param;
-    solver_param.set_base_lr(0.005);
+    solver_param.set_base_lr(0.001);
     solver_param.set_momentum(0.9);
     solver_param.set_weight_decay(0.0005);
 
@@ -176,7 +176,6 @@ void networkSolver::trainNet(string net_name, int resume_iter)
     solver_param.set_lr_policy("step");
     solver_param.set_gamma(0.9);
 
-    //    solver_param.set_snapshot(snapshot_iter);
     solver_param.set_snapshot_prefix(net_name);
 
     solver_param.set_display(1);
@@ -200,10 +199,9 @@ void networkSolver::trainNet(string net_name, int resume_iter)
 
     vector<Sample> batch;
     int triplet_size = 5;
-    int num_epochs = 1;
+    int num_epochs = 30;
     int training_rounds = 3;
     int epoch_iter = nr_objects * nr_training_poses / (batch_size/triplet_size);
-    epoch_iter = 10;
     bool bootstrapping = false;
 
     // Perform training
@@ -307,6 +305,16 @@ void networkSolver::testManifold(string net_name, int resume_iter)
         DBfeats.push_back(computeDescriptors(CNN, templates[tmpl]));
     }
     int nr_templates = DBfeats.rows/used_models.size();
+
+    // If more than 3 dims, do PCA
+    if (DBfeats.cols > 3)
+    {
+
+        PCA pca(DBfeats, Mat(), CV_PCA_DATA_AS_ROW);
+        Mat proj = pca.project(DBfeats);
+        proj(Rect(0,0,3,proj.rows)).copyTo(DBfeats);
+    }
+
 
     // Visualize for the case where feat_dim is 3D
     viz::Viz3d visualizer("Manifold");
