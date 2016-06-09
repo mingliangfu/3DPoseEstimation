@@ -79,7 +79,8 @@ void SingletonPainter::clearBackground(float r,float g,float b)
     m_background << r,g,b;
 }
 /*********************************************************************************/
-void SingletonPainter::bindVBOs(vector<Vector3f> &vertex, vector<Vector3i> &faces, GLuint &vert, GLuint &ind)
+void SingletonPainter::bindVBOs(vector<Vector3f, Eigen::aligned_allocator<Vector3f> > &vertex,
+                                vector<Vector3i, Eigen::aligned_allocator<Vector3i> > &faces, GLuint &vert, GLuint &ind)
 {
     makeCurrent();
     glGenBuffers(1, &vert);
