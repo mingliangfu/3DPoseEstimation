@@ -80,9 +80,9 @@ vector<RenderView, Eigen::aligned_allocator<RenderView> > SphereRenderer::create
     for(float currsca : sca)
         for(Vector3f &pos : sphere)
         {
-            if((pos(0) < 0) && rotInv == 2) {skipped++; continue;} // Skip negative x-part (for symmetric objects)
-            if((pos(1) < 0 || pos(1) > 0.35/subdiv || pos(0) < 0) && rotInv == 1) {skipped++; continue;} // Store the views with fixed azimuth (y==0) (for rot. inv. objects)
             if((pos(2) < 0) && skipLowerHemi) continue;  // Skip the lower hemisphere of the object
+            if((pos(1) < 0 || pos(1) > 0.35/subdiv || pos(0) < 0) && rotInv == 1) {skipped++; continue;} // Store the views with fixed azimuth (y==0) (for rot. inv. objects)
+            if((pos(0) < 0) && rotInv == 2) {skipped++; continue;} // Skip negative x-part (for symmetric objects)
 //            cout << "Pose: " << pos(0) << ", " << pos(1) << ", " << pos(2) << endl;
 
             for(float curr_rot : rots)
@@ -101,9 +101,9 @@ vector<RenderView, Eigen::aligned_allocator<RenderView> > SphereRenderer::create
     Mat DBfeats;
     for(Vector3f &pos : sphere)
     {
-       if((pos(0) < 0) && rotInv == 2) {skipped++; continue;} // Skip negative x-part (for symmetric objects)
-       if((pos(1) < 0 || pos(1) > 0.35/subdiv || pos(0) < 0) && rotInv == 1) {skipped++; continue;} // Store the views with fixed azimuth (y==0) (for rot. inv. objects)
        if((pos(2) < 0) && skipLowerHemi) continue;  // Skip the lower hemisphere of the object
+       if((pos(0) < 0) && rotInv == 2) continue; // Skip negative x-part (for symmetric objects)
+       if((pos(1) < 0 || pos(1) > 0.35/subdiv || pos(0) < 0) && rotInv == 1) continue; // Store the views with fixed azimuth (y==0) (for rot. inv. objects)
 
        float sz[3] = {pos(0), pos(1), pos(2)};
        Mat pose = Mat(1, 3, CV_32FC1, &sz);
@@ -119,14 +119,11 @@ vector<RenderView, Eigen::aligned_allocator<RenderView> > SphereRenderer::create
     visualizer.spin();
 #endif
 
+    // Fill the rest of the templates
     if(rotInv != 0) {
-        std::random_device ran;
-        uniform_int_distribution<size_t> outGen(0, out.size() - 1);
-        int outId = outGen(ran);
-
-        while(out.size() != (out.size() + skipped)) {
-            outId = outGen(ran);
-            out.push_back(out[outId]);
+        int out_size = out.size();
+        while(out.size() < (out_size + skipped*rots.size())) {
+            out.push_back(out[0]);
         }
     }
 
