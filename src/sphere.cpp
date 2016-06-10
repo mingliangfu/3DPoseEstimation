@@ -105,18 +105,22 @@ vector<RenderView, Eigen::aligned_allocator<RenderView> > SphereRenderer::create
        if((pos(0) < 0) && rotInv == 2) continue; // Skip negative x-part (for symmetric objects)
        if((pos(1) < 0 || pos(1) > 0.35/subdiv || pos(0) < 0) && rotInv == 1) continue; // Store the views with fixed azimuth (y==0) (for rot. inv. objects)
 
-       float sz[3] = {pos(0), pos(1), pos(2)};
+       float sz[3] = {pos(0), pos(2), pos(1)};
        Mat pose = Mat(1, 3, CV_32FC1, &sz);
        DBfeats.push_back(pose);
     }
 
     // Visualize for the case where feat_dim is 3D
-    viz::Viz3d visualizer("Manifold");
+    viz::Viz3d visualizer("Sphere");
     cv::Mat vizMat(DBfeats.rows,1,CV_32FC3, DBfeats.data);
-    viz::WCloud manifold(vizMat);
-    manifold.setRenderingProperty(viz::POINT_SIZE, 5);
-    visualizer.showWidget("Sphere", manifold);
+    viz::WCloud sphere_cloud(vizMat,cv::viz::Color::black());
+    sphere_cloud.setRenderingProperty(viz::POINT_SIZE, 5);
+    visualizer.setBackgroundColor(cv::viz::Color::white(), cv::viz::Color::white());
+    visualizer.setWindowSize(cv::Size(500, 400));
+//    visualizer.setViewerPose();
+    visualizer.showWidget("cloud", sphere_cloud);
     visualizer.spin();
+//    visualizer.saveScreenshot("sampling.png");
 #endif
 
     // Fill the rest of the templates

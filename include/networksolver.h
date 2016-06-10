@@ -20,15 +20,13 @@ class networkSolver
 public:
     networkSolver(vector<string> used_models, string network_path, string hdf5_path, datasetManager db_manager);
     vector<Sample> buildBatch(int batch_size, int iter, bool bootstrapping);
-    void setNetworkParameters();
     void trainNet(string net_name, int resume_iter=0);
-    void testManifold(string net_name, int resume_iter);
-    void testKNN(string net_name, int resume_iter, vector<string> test_models);
-    void getTrainingKNN(string net_name, int resume_iter);
-    void shuffleTrainingSet();
+    void visualizeManifold(caffe::Net<float> &CNN, int iter);
+    void visualizeKNN(caffe::Net<float> &CNN, vector<string> test_models);
+    void computeKNN(caffe::Net<float> &CNN);
+    void evaluateNetwork(caffe::Net<float> &CNN);
+    bool bootstrap(caffe::Net<float> &CNN, int iter);
     Mat computeDescriptors(caffe::Net<float> &CNN, vector<Sample> samples);
-    bool bootstrap(string net_name, int resume_iter);
-    void evaluateNetwork(string net_name, int resume_iter);
 private:
     hdf5Handler h5;
     string network_path;
@@ -36,9 +34,7 @@ private:
     std::random_device ran;
     vector<string> used_models;
     vector<vector<Sample>> training_set, test_set, templates;
-    // Build a bool vector for each object that stores if all templates have been used yet
-    vector<vector<bool>> training_used;
-    vector< vector<Quaternionf, Eigen::aligned_allocator<Quaternionf> > > training_quats;
+    vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>> training_quats;
     vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>> tmpl_quats;
     datasetManager db_manager;
     unordered_map<string,int> model_index;
