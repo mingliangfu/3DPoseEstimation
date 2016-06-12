@@ -14,6 +14,8 @@
 #include <unordered_map>
 
 #include <boost/filesystem.hpp>
+#include <boost/property_tree/ptree.hpp>
+#include <boost/property_tree/ini_parser.hpp>
 
 #include "sphere.h"
 #include "datatypes.h"
@@ -27,20 +29,20 @@ using namespace boost;
 class datasetManager
 {
 public:
-    datasetManager(string dataset_path, string hdf5_path);
+    datasetManager(string config);
     Benchmark loadLinemodBenchmark(string linemod_path, string sequence, int count=-1);
     Mat samplePatchWithScale(Mat &color, Mat &depth, int center_x, int center_y, float z, float fx, float fy);
     vector<Sample> extractSceneSamplesPaul(vector<Frame, Eigen::aligned_allocator<Frame>> &frames, Matrix3f &cam, int index);
     vector<Sample> extractSceneSamplesWadim(vector<Frame, Eigen::aligned_allocator<Frame>> &frames, Matrix3f &cam, int index);
     vector<Sample> createTemplatesPaul(Model &model, Matrix3f &cam, int index, int rotInv);
     vector<Sample> createTemplatesWadim(Model &model, Matrix3f &cam, int index, int rotInv, int subdiv);
-    void createSceneSamplesAndTemplates(vector<string> used_models);
+    void createSceneSamplesAndTemplates();
     void saveSamples();
-    void generateDatasets(vector<string> used_models, vector<vector<Sample>>& trainingSet, vector<vector<Sample>>& testSet, vector<vector<Sample>>& templates);
+    void generateDatasets(vector<vector<Sample>>& trainingSet, vector<vector<Sample>>& testSet, vector<vector<Sample>>& templates);
     void addNoiseToSynthData(unsigned int copies, vector<vector<Sample>>& trainingSet);
 private:
-    string dataset_path, hdf5_path, network_path;
-    vector<string> models;
+    string dataset_path, hdf5_path;
+    vector<string> models, used_models;
     unordered_map<string,int> model_index;
     vector<int> rotInv;
     hdf5Handler h5;

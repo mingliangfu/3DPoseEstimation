@@ -8,6 +8,9 @@
 #include <opencv2/viz.hpp>
 #include <opencv2/features2d.hpp>
 
+#include <boost/property_tree/ptree.hpp>
+#include <boost/property_tree/ini_parser.hpp>
+
 #include "caffe/caffe.hpp"
 #include "caffe/sgd_solvers.hpp"
 #include "model.h"
@@ -15,12 +18,17 @@
 #include "hdf5handler.h"
 #include "datasetmanager.h"
 
+using namespace Eigen;
+using namespace std;
+using namespace cv;
+using namespace boost;
+
 class networkSolver
 {
 public:
-    networkSolver(vector<string> used_models, string network_path, string hdf5_path, datasetManager db_manager);
+    networkSolver(string config);
     vector<Sample> buildBatch(int batch_size, int iter, bool bootstrapping);
-    void trainNet(string net_name, int resume_iter=0);
+    void trainNet(int resume_iter=0);
     void visualizeManifold(caffe::Net<float> &CNN, int iter);
     void visualizeKNN(caffe::Net<float> &CNN, vector<string> test_models);
     void computeKNN(caffe::Net<float> &CNN);
@@ -29,22 +37,21 @@ public:
     Mat computeDescriptors(caffe::Net<float> &CNN, vector<Sample> samples);
 private:
     hdf5Handler h5;
-    string network_path;
-    string hdf5_path;
     std::random_device ran;
-    vector<string> used_models;
     vector<vector<Sample>> training_set, test_set, templates;
-    vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>> training_quats;
     vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>> tmpl_quats;
-    datasetManager db_manager;
-    unordered_map<string,int> model_index;
+    vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>> training_quats;
+    datasetManager *db_manager;
     vector<vector<vector<int>>> maxSimTmpl, maxSimKNNTmpl;
+    unordered_map<string,int> model_index;
 
-    unsigned int nr_objects;
-    unsigned int nr_training_poses;
-    unsigned int nr_template_poses;
-    unsigned int nr_test_poses;
-
+    // Config parameters
+    vector<string> used_models;
+    unsigned int nr_objects, nr_training_poses, nr_template_poses, nr_test_poses;
+    unsigned int num_epochs, num_training_rounds;
+    unsigned int step_size;
+    string network_path, net_name, learning_policy;
+    float learning_rate, momentum, weight_decay, gamma;
 };
 
 #endif // NETWORKSOLVER_H

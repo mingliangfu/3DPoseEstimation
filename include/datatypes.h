@@ -8,6 +8,8 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
+#include <boost/lexical_cast.hpp>
+
 #include <iostream>
 #include <iomanip>
 
@@ -88,6 +90,16 @@ inline Mat showRGBDPatch(Mat &patch, bool show=true)
 
     if(show) {imshow("R G B D",out); waitKey();}
     return out;
+}
+
+template<typename T>
+inline std::vector<T> to_array(const std::string& s)
+{
+  std::vector<T> result;
+  std::stringstream ss(s);
+  std::string item;
+  while(std::getline(ss, item, ',')) result.push_back(boost::lexical_cast<T>(item));
+  return result;
 }
 
 

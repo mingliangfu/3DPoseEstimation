@@ -1,18 +1,18 @@
 #include "datasetmanager.h"
 
-datasetManager::datasetManager(string dataset_path, string hdf5_path):
-                dataset_path(dataset_path), hdf5_path(hdf5_path)
+datasetManager::datasetManager(string config)
 {
-    vector<string> models = {"ape","benchvise","bowl","cam","can","cat", "cup","driller",
-                                 "duck","eggbox","glue","holepuncher","iron","lamp","phone"};
-    rotInv = {0, 0, 1, 0, 0, 0, 2, 0, 0, 2, 2, 0, 0, 0, 0};
+    boost::property_tree::ptree pt;
+    boost::property_tree::ini_parser::read_ini(config, pt);
+    dataset_path = pt.get<string>("paths.dataset_path");
+    hdf5_path = pt.get<string>("paths.hdf5_path");
 
-    // For each object of the dataset
-    for (size_t i = 0; i < models.size(); ++i)
-    {
-        // - build a mapping from model name to index number
-        model_index[models[i]] = i;
-    }
+    models = to_array<string>(pt.get<string>("input.models"));
+    used_models = to_array<string>(pt.get<string>("input.used_models"));
+    rotInv = to_array<int>(pt.get<string>("input.rotInv"));
+
+    // For each object build a mapping from model name to index number
+    for (size_t i = 0; i < used_models.size(); ++i) model_index[used_models[i]] = i;
 }
 
 Benchmark datasetManager::loadLinemodBenchmark(string linemod_path, string sequence, int count /*=-1*/)
@@ -259,7 +259,7 @@ vector<Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, 
     // Create synthetic views
     SphereRenderer sphere(cam);
     Vector3f scales(0.4, 1.1, 1.0);     // Render from 0.4 meters
-    Vector3f in_plane_rots(-45,15,45);  // Render in_plane_rotations from -45 degree to 45 degree in 15degree steps
+    Vector3f in_plane_rots(0,15,10);  // Render in_plane_rotations from -45 degree to 45 degree in 15degree steps
     vector<RenderView, Eigen::aligned_allocator<RenderView> > views =
             sphere.createViews(model,subdiv,scales,in_plane_rots,true,false,rotInv, subdiv);    // Equidistant sphere sampling with recursive level subdiv
 
@@ -286,7 +286,7 @@ vector<Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, 
 
 }
 
-void datasetManager::createSceneSamplesAndTemplates(vector<string> used_models)
+void datasetManager::createSceneSamplesAndTemplates()
 {
     for (size_t modelId = 0; modelId < used_models.size(); ++modelId) {
 
@@ -302,7 +302,7 @@ void datasetManager::createSceneSamplesAndTemplates(vector<string> used_models)
         Benchmark bench = loadLinemodBenchmark(dataset_path, model_name);
         // showGT(bench,model);
 
-        // === Real data ===
+        // Real data
         // - for each scene frame, extract RGBD sample
         vector<Sample> realSamples = extractSceneSamplesPaul(bench.frames,bench.cam,model_index[model_name]);
 
@@ -310,15 +310,15 @@ void datasetManager::createSceneSamplesAndTemplates(vector<string> used_models)
         h5.write(hdf5_path + "realSamples_" + model_name +".h5", realSamples);
         // for (Sample &s : realSamples) showRGBDPatch(s.data);
 
-        // === Synthetic data ===
+        // Synthetic data
         clog << "  - render synthetic data:" << endl;
         // - create synthetic samples and templates
         int subdivTmpl = 3; // sphere subdivision factor for templates
         vector<Sample> templates = createTemplatesWadim(model, bench.cam, model_index[model_name], rotInv[model_index[model_name]], subdivTmpl);
         vector<Sample> synthSamples = createTemplatesWadim(model, bench.cam, model_index[model_name], 0, subdivTmpl+1);
-//        vector<Sample> temp = createTemplatesPaul(model, bench.cam, model_index[model_name], rotInv[model_index[model_name]]);
-//        vector<Sample> templates (temp.begin(),temp.begin() + 301);
-//        vector<Sample> synthSamples (temp.begin() + 302, temp.end());
+        //  vector<Sample> temp = createTemplatesPaul(model, bench.cam, model_index[model_name], rotInv[model_index[model_name]]);
+        //  vector<Sample> templates (temp.begin(),temp.begin() + 301);
+        //  vector<Sample> synthSamples (temp.begin() + 302, temp.end());
 
         // - store realSamples to HDF5 files
         h5.write(hdf5_path + "templates_" + model_name + ".h5", templates);
@@ -328,7 +328,7 @@ void datasetManager::createSceneSamplesAndTemplates(vector<string> used_models)
     }
 }
 
-void datasetManager::generateDatasets(vector<string> used_models, vector<vector<Sample>>& training_set, vector<vector<Sample>>& test_set, vector<vector<Sample>>& templates)
+void datasetManager::generateDatasets(vector<vector<Sample>>& training_set, vector<vector<Sample>>& test_set, vector<vector<Sample>>& templates)
 {
     training_set.clear();
     test_set.clear();

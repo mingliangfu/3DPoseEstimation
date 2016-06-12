@@ -1,27 +1,44 @@
 #include "networksolver.h"
 
-networkSolver::networkSolver(vector<string> used_models, string network_path, string hdf5_path, datasetManager db_manager):
-               used_models(used_models), network_path(network_path), hdf5_path(hdf5_path), db_manager(db_manager)
+networkSolver::networkSolver(string config)
 {
+    // Read learning parameters
+    boost::property_tree::ptree pt;
+    boost::property_tree::ini_parser::read_ini(config, pt);
+
+    network_path = pt.get<string>("paths.network_path");
+    net_name = pt.get<string>("train.net_name");
+    num_epochs = pt.get<unsigned int>("train.num_epochs");
+    num_training_rounds = pt.get<unsigned int>("train.num_training_rounds");
+    learning_rate =  pt.get<float>("train.learning_rate");
+    momentum = pt.get<float>("train.momentum");
+    weight_decay =  pt.get<float>("train.weight_decay");
+    learning_policy = pt.get<string>("train.learning_policy");
+    step_size = pt.get<unsigned int>("train.step_size");
+    gamma = pt.get<float>("train.gamma");
+
+    bool gpu = pt.get<bool>("train.gpu");
+    if (gpu) caffe::Caffe::set_mode(caffe::Caffe::GPU);
+
+    used_models = to_array<string>(pt.get<string>("input.used_models"));
+
     // Generate the datasets out of the stored h5 files
-    db_manager.generateDatasets(used_models, training_set, test_set, templates);
+    db_manager = new datasetManager(config);
+    db_manager->generateDatasets(training_set, test_set, templates);
 
-    // For each object of the dataset
-    for (size_t i = 0; i < used_models.size(); ++i)
-    {
-        // - build a mapping from model name to index number
-        model_index[used_models[i]] = i;
-    }
-
+    // Save dataset parameters
     nr_objects = used_models.size();
     nr_training_poses = training_set[0].size();
     nr_template_poses = templates[0].size();
     nr_test_poses = test_set[0].size();
 
+    // For each object build a mapping from model name to index number
+    for (size_t i = 0; i < nr_objects; ++i) model_index[used_models[i]] = i;
+
     // Read quaternion poses from templates (they are identical for all objects)
     tmpl_quats.assign(nr_template_poses, Quaternionf());
-    for  (size_t i=0; i < nr_template_poses; ++i)
-        for (size_t j=0; j < 4; ++j)
+    for  (size_t i = 0; i < nr_template_poses; ++i)
+        for (size_t j = 0; j < 4; ++j)
             tmpl_quats[i].coeffs()(j) = templates[0][i].label.at<float>(0,1+j);
 
     // Read quaternion poses from training data
@@ -33,7 +50,7 @@ networkSolver::networkSolver(vector<string> used_models, string network_path, st
                 training_quats[i][k].coeffs()(j) = training_set[i][k].label.at<float>(0,1+j);
     }
 
-    // Calculate maxSimTmpl: find the 2 most similar templates
+    // Calculate maxSimTmpl: find the 2 most similar templates for each object in the training set
     maxSimTmpl.assign(nr_objects, vector<vector<int>>(nr_training_poses, vector<int>()));
     for (int object = 0; object < nr_objects; ++object)
     {
@@ -62,7 +79,6 @@ networkSolver::networkSolver(vector<string> used_models, string network_path, st
                 sim_tmpl = tmpl_pose1;
             }
             maxSimTmpl[object][training_pose].push_back(sim_tmpl);
-
         }
     }
 }
@@ -71,7 +87,7 @@ vector<Sample> networkSolver::buildBatch(int batch_size, int iter, bool bootstra
 {
     int triplet_size = 5;
     vector<Sample> batch;
-    size_t puller=0, pusher0=0, pusher1=0, pusher2=0;
+    size_t puller = 0, pusher0 = 0, pusher1 = 0, pusher2 = 0;
     TripletWang triplet;
 
     // Random generator for object selection and template selection
@@ -152,18 +168,18 @@ vector<Sample> networkSolver::buildBatch(int batch_size, int iter, bool bootstra
     return batch;
 }
 
-void networkSolver::trainNet(string net_name, int resume_iter)
+void networkSolver::trainNet(int resume_iter)
 {
 
     // Set network parameters
     caffe::SolverParameter solver_param;
-    solver_param.set_base_lr(0.001);
-    solver_param.set_momentum(0.9);
-    solver_param.set_weight_decay(0.0005);
+    solver_param.set_base_lr(learning_rate);
+    solver_param.set_momentum(momentum);
+    solver_param.set_weight_decay(weight_decay);
     solver_param.set_solver_type(caffe::SolverParameter_SolverType_SGD);
-    solver_param.set_stepsize(15000);
-    solver_param.set_lr_policy("step");
-    solver_param.set_gamma(0.9);
+    solver_param.set_lr_policy(learning_policy);
+    solver_param.set_stepsize(step_size);
+    solver_param.set_gamma(gamma);
     solver_param.set_snapshot_prefix(net_name);
     solver_param.set_display(1);
     solver_param.set_net(network_path + net_name + ".prototxt");
@@ -189,14 +205,12 @@ void networkSolver::trainNet(string net_name, int resume_iter)
 
     vector<Sample> batch;
     int triplet_size = 5;
-    int num_epochs = 1;
-    int training_rounds = 2;
     int epoch_iter = nr_objects * nr_training_poses / (batch_size/triplet_size);
-    epoch_iter = 10;
+        epoch_iter = 10;
     bool bootstrapping = false;
 
     // Perform training
-    for (int training_round = 0; training_round < training_rounds; ++training_round)
+    for (int training_round = 0; training_round < num_training_rounds; ++training_round)
     {
         for (int epoch = 0; epoch < num_epochs; epoch++)
         {
@@ -303,7 +317,6 @@ void networkSolver::visualizeManifold(caffe::Net<float> &CNN, int iter)
         proj(Rect(0,0,3,proj.rows)).copyTo(DBfeats);
     }
 
-
     // Visualize for the case where feat_dim is 3D
     viz::Viz3d visualizer("Manifold");
     cv::Mat vizMat(DBfeats.rows,1,CV_32FC3, DBfeats.data);
@@ -321,7 +334,6 @@ void networkSolver::visualizeManifold(caffe::Net<float> &CNN, int iter)
     visualizer.spin();
 //    visualizer.spinOnce();
     visualizer.saveScreenshot("manifold_" + to_string(iter) + ".png");
-
 }
 
 void networkSolver::visualizeKNN(caffe::Net<float> &CNN, vector<string> test_models)
@@ -461,7 +473,6 @@ void networkSolver::evaluateNetwork(caffe::Net<float> &CNN)
     cout << "Intra-class accuracy: " << intra/(float)(nr_objects*nr_training_poses)*100 << endl;
     cout << "Inter-class accuracy: " << inter/(float)(nr_objects*nr_training_poses)*100 << endl;
 }
-
 
 
 
