@@ -40,7 +40,7 @@ public:
     void saveSamples();
     void generateDatasets(vector<vector<Sample>>& trainingSet, vector<vector<Sample>>& testSet, vector<vector<Sample>>& templates);
     void addNoiseToSynthData(unsigned int copies, vector<vector<Sample>>& trainingSet);
-private:
+
     string dataset_path, hdf5_path;
     vector<string> models, used_models;
     unordered_map<string,int> model_index;

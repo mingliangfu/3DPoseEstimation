@@ -34,8 +34,9 @@ public:
     void computeKNN(caffe::Net<float> &CNN);
     void evaluateNetwork(caffe::Net<float> &CNN);
     bool bootstrap(caffe::Net<float> &CNN, int iter);
+    void generateDataset();
     Mat computeDescriptors(caffe::Net<float> &CNN, vector<Sample> samples);
-private:
+
     hdf5Handler h5;
     std::random_device ran;
     vector<vector<Sample>> training_set, test_set, templates;
@@ -52,6 +53,7 @@ private:
     unsigned int step_size;
     string network_path, net_name, learning_policy;
     float learning_rate, momentum, weight_decay, gamma;
+    bool gpu;
 };
 
 #endif // NETWORKSOLVER_H

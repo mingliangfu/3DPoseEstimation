@@ -16,14 +16,19 @@ networkSolver::networkSolver(string config)
     learning_policy = pt.get<string>("train.learning_policy");
     step_size = pt.get<unsigned int>("train.step_size");
     gamma = pt.get<float>("train.gamma");
+    gpu = pt.get<bool>("train.gpu");
 
-    bool gpu = pt.get<bool>("train.gpu");
     if (gpu) caffe::Caffe::set_mode(caffe::Caffe::GPU);
 
     used_models = to_array<string>(pt.get<string>("input.used_models"));
 
     // Generate the datasets out of the stored h5 files
     db_manager = new datasetManager(config);
+
+}
+
+void networkSolver::generateDataset()
+{
     db_manager->generateDatasets(training_set, test_set, templates);
 
     // Save dataset parameters
@@ -149,7 +154,7 @@ vector<Sample> networkSolver::buildBatch(int batch_size, int iter, bool bootstra
             triplet.pusher2 = templates[pusher2][ran_tpl(ran)];
         }
 
-#if 1   // Show triplets
+#if 0   // Show triplets
         imshow("anchor",showRGBDPatch(triplet.anchor.data,false));
         imshow("puller",showRGBDPatch(triplet.puller.data,false));
         imshow("pusher0",showRGBDPatch(triplet.pusher0.data,false));
@@ -206,7 +211,6 @@ void networkSolver::trainNet(int resume_iter)
     vector<Sample> batch;
     int triplet_size = 5;
     int epoch_iter = nr_objects * nr_training_poses / (batch_size/triplet_size);
-        epoch_iter = 10;
     bool bootstrapping = false;
 
     // Perform training
@@ -331,8 +335,8 @@ void networkSolver::visualizeManifold(caffe::Net<float> &CNN, int iter)
     visualizer.setBackgroundColor(cv::viz::Color::white(), cv::viz::Color::white());
     visualizer.setWindowSize(cv::Size(600, 400));
     visualizer.showWidget("cloud", manifold);
-    visualizer.spin();
-//    visualizer.spinOnce();
+    //visualizer.spin();
+    visualizer.spinOnce();
     visualizer.saveScreenshot("manifold_" + to_string(iter) + ".png");
 }
 

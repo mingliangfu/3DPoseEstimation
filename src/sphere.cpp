@@ -96,7 +96,7 @@ vector<RenderView, Eigen::aligned_allocator<RenderView> > SphereRenderer::create
             }
         }
 
-#if 1
+#if 0
     // Visualize the sphere
     Mat DBfeats;
     for(Vector3f &pos : sphere)

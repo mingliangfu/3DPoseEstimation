@@ -77,18 +77,28 @@ static inline void loadbar( string label, unsigned int x, unsigned int n, unsign
 inline Mat showRGBDPatch(Mat &patch, bool show=true)
 {
     vector<Mat> channels;
-    //cv::split((patch+1.f)*0.5f,channels);
     cv::split(patch,channels);
 
-    Mat RGB,D,out(patch.rows,patch.cols*2,CV_32FC3);
-
+    Mat RGB,D,NOR,out;
     cv::merge(vector<Mat>({channels[0],channels[1],channels[2]}),RGB);
-    RGB.copyTo(out(Rect(0,0,patch.cols,patch.rows)));
-
     cv::merge(vector<Mat>({channels[3],channels[3],channels[3]}),D);
-    D.copyTo(out(Rect(patch.cols,0,patch.cols,patch.rows)));
 
-    if(show) {imshow("R G B D",out); waitKey();}
+    if (channels.size()==4)
+    {
+        out = Mat(patch.rows,patch.cols*2,CV_32FC3);
+        RGB.copyTo(out(Rect(0,0,patch.cols,patch.rows)));
+        D.copyTo(out(Rect(patch.cols,0,patch.cols,patch.rows)));
+    }
+    else if (channels.size()==7)
+    {
+        out = Mat(patch.rows,patch.cols*3,CV_32FC3);
+        cv::merge(vector<Mat>({abs(channels[4]),abs(channels[5]),abs(channels[6])}),NOR);
+        RGB.copyTo(out(Rect(0,0,patch.cols,patch.rows)));
+        D.copyTo(out(Rect(patch.cols,0,patch.cols,patch.rows)));
+        NOR.copyTo(out(Rect(patch.cols*2,0,patch.cols,patch.rows)));
+    }
+
+    if (show){imshow("Patch ", out); waitKey();}
     return out;
 }
 
