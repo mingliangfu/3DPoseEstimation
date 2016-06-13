@@ -17,11 +17,13 @@
 #include "datatypes.h"
 #include "hdf5handler.h"
 #include "datasetmanager.h"
+#include "networkevaluator.h"
 
 using namespace Eigen;
 using namespace std;
 using namespace cv;
 using namespace boost;
+typedef networkEvaluator eval;
 
 class networkSolver
 {
@@ -29,20 +31,19 @@ public:
     networkSolver(string config, datasetManager *db);
     vector<Sample> buildBatch(int batch_size, int iter, bool bootstrapping);
     void trainNet(int resume_iter=0);
-    void visualizeManifold(caffe::Net<float> &CNN, int iter);
-    void visualizeKNN(caffe::Net<float> &CNN, vector<string> test_models);
     void computeKNN(caffe::Net<float> &CNN);
-    void evaluateNetwork(caffe::Net<float> &CNN);
+    void visualizeKNN(caffe::Net<float> &CNN, vector<string> test_models);
     bool bootstrap(caffe::Net<float> &CNN, int iter);
-    Mat computeDescriptors(caffe::Net<float> &CNN, vector<Sample> samples);
+
 private:
     hdf5Handler h5;
     std::random_device ran;
-    datasetManager *db;
     vector<vector<vector<int>>> maxSimTmpl, maxSimKNNTmpl;
     unordered_map<string,int> model_index;
     unsigned int nr_objects, nr_training_poses, nr_template_poses, nr_test_poses;
 
+    // Const references to db objects
+    datasetManager *db;
     const vector<vector<Sample>>& training_set, test_set, templates;
     const vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>& tmpl_quats;
     const vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>>& training_quats, test_quats;
@@ -53,6 +54,7 @@ private:
     unsigned int step_size;
     string network_path, net_name, learning_policy;
     float learning_rate, momentum, weight_decay, gamma;
+    bool gpu;
 };
 
 #endif // NETWORKSOLVER_H
