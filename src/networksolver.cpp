@@ -187,7 +187,6 @@ void networkSolver::trainNet(int resume_iter)
     vector<Sample> batch;
     int triplet_size = 5;
     int epoch_iter = nr_objects * nr_training_poses / (batch_size/triplet_size);
-        epoch_iter = 10;
     bool bootstrapping = false;
 
     // Perform training
