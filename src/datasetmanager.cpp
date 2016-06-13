@@ -10,6 +10,7 @@ datasetManager::datasetManager(string config)
     models = to_array<string>(pt.get<string>("input.models"));
     used_models = to_array<string>(pt.get<string>("input.used_models"));
     rotInv = to_array<int>(pt.get<string>("input.rotInv"));
+    nr_objects = used_models.size();
 
     // For each object build a mapping from model name to index number
     for (size_t i = 0; i < used_models.size(); ++i) model_index[used_models[i]] = i;
@@ -328,12 +329,11 @@ void datasetManager::createSceneSamplesAndTemplates()
     }
 }
 
-void datasetManager::generateDatasets(vector<vector<Sample>>& training_set, vector<vector<Sample>>& test_set, vector<vector<Sample>>& templates)
+void datasetManager::generateDatasets()
 {
     training_set.clear();
     test_set.clear();
     templates.clear();
-    int nr_objects = used_models.size();
 
 
     for (string &seq : used_models)
@@ -411,6 +411,40 @@ void datasetManager::generateDatasets(vector<vector<Sample>>& training_set, vect
         test_set[object].resize(min_test);
         random_shuffle(training_set[object].begin(), training_set[object].end());
         random_shuffle(test_set[object].begin(), test_set[object].end());
+    }
+
+    // Remember the sizes;
+    nr_training_poses = training_set[0].size();
+    nr_template_poses = templates[0].size();
+    nr_test_poses = test_set[0].size();
+
+    computeQuaternions();
+}
+
+void datasetManager::computeQuaternions()
+{
+    // Read quaternion poses from templates (they are identical for all objects)
+    tmpl_quats.assign(nr_template_poses, Quaternionf());
+    for  (size_t i = 0; i < nr_template_poses; ++i)
+        for (size_t j = 0; j < 4; ++j)
+            tmpl_quats[i].coeffs()(j) = templates[0][i].label.at<float>(0,1+j);
+
+    // Read quaternion poses from training data
+    training_quats.assign(nr_objects, vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>());
+    for  (size_t i = 0; i < nr_objects; ++i) {
+        training_quats[i].resize(training_set[i].size());
+        for (size_t k = 0; k < training_quats[i].size(); ++k)
+            for (int j = 0; j < 4; ++j)
+                training_quats[i][k].coeffs()(j) = training_set[i][k].label.at<float>(0,1+j);
+    }
+
+    // Read quaternion poses from test data
+    test_quats.assign(nr_objects, vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>());
+    for  (size_t i = 0; i < nr_objects; ++i) {
+        test_quats[i].resize(test_set[i].size());
+        for (size_t k = 0; k < test_quats[i].size(); ++k)
+            for (int j = 0; j < 4; ++j)
+                test_quats[i][k].coeffs()(j) = test_set[i][k].label.at<float>(0,1+j);
     }
 }
 

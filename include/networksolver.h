@@ -26,7 +26,7 @@ using namespace boost;
 class networkSolver
 {
 public:
-    networkSolver(string config);
+    networkSolver(string config, datasetManager *db);
     vector<Sample> buildBatch(int batch_size, int iter, bool bootstrapping);
     void trainNet(int resume_iter=0);
     void visualizeManifold(caffe::Net<float> &CNN, int iter);
@@ -38,16 +38,17 @@ public:
 private:
     hdf5Handler h5;
     std::random_device ran;
-    vector<vector<Sample>> training_set, test_set, templates;
-    vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>> tmpl_quats;
-    vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>> training_quats;
-    datasetManager *db_manager;
+    datasetManager *db;
     vector<vector<vector<int>>> maxSimTmpl, maxSimKNNTmpl;
     unordered_map<string,int> model_index;
+    unsigned int nr_objects, nr_training_poses, nr_template_poses, nr_test_poses;
+
+    const vector<vector<Sample>>& training_set, test_set, templates;
+    const vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>& tmpl_quats;
+    const vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>>& training_quats, test_quats;
 
     // Config parameters
     vector<string> used_models;
-    unsigned int nr_objects, nr_training_poses, nr_template_poses, nr_test_poses;
     unsigned int num_epochs, num_training_rounds;
     unsigned int step_size;
     string network_path, net_name, learning_policy;

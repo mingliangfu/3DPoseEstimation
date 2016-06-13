@@ -74,7 +74,7 @@ static inline void loadbar( string label, unsigned int x, unsigned int n, unsign
     if ( x == n ) clog << endl;
 }
 
-inline Mat showRGBDPatch(Mat &patch, bool show=true)
+inline Mat showRGBDPatch(const Mat &patch, bool show=true)
 {
     vector<Mat> channels;
     //cv::split((patch+1.f)*0.5f,channels);

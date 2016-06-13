@@ -1,6 +1,8 @@
 #include "networksolver.h"
 
-networkSolver::networkSolver(string config)
+networkSolver::networkSolver(string config, datasetManager* db): db(db), training_set(db->getTrainingSet()), templates(db->getTemplateSet()),
+                                                                 test_set(db->getTemplateSet()), training_quats(db->getTrainingQuats()),
+                                                                 tmpl_quats(db->getTmplQuats()), test_quats(db->getTestQuats())
 {
     // Read learning parameters
     boost::property_tree::ptree pt;
@@ -22,33 +24,14 @@ networkSolver::networkSolver(string config)
 
     used_models = to_array<string>(pt.get<string>("input.used_models"));
 
-    // Generate the datasets out of the stored h5 files
-    db_manager = new datasetManager(config);
-    db_manager->generateDatasets(training_set, test_set, templates);
-
     // Save dataset parameters
     nr_objects = used_models.size();
-    nr_training_poses = training_set[0].size();
-    nr_template_poses = templates[0].size();
-    nr_test_poses = test_set[0].size();
+    nr_training_poses = db->getTrainingSetSize();
+    nr_template_poses = db->getTemplateSetSize();
+    nr_test_poses = db->getTestSetSize();
 
     // For each object build a mapping from model name to index number
     for (size_t i = 0; i < nr_objects; ++i) model_index[used_models[i]] = i;
-
-    // Read quaternion poses from templates (they are identical for all objects)
-    tmpl_quats.assign(nr_template_poses, Quaternionf());
-    for  (size_t i = 0; i < nr_template_poses; ++i)
-        for (size_t j = 0; j < 4; ++j)
-            tmpl_quats[i].coeffs()(j) = templates[0][i].label.at<float>(0,1+j);
-
-    // Read quaternion poses from training data
-    training_quats.assign(nr_objects, vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>());
-    for  (size_t i = 0; i < nr_objects; ++i) {
-        training_quats[i].resize(training_set[i].size());
-        for (size_t k = 0; k < training_quats[i].size(); ++k)
-            for (int j = 0; j < 4; ++j)
-                training_quats[i][k].coeffs()(j) = training_set[i][k].label.at<float>(0,1+j);
-    }
 
     // Calculate maxSimTmpl: find the 2 most similar templates for each object in the training set
     maxSimTmpl.assign(nr_objects, vector<vector<int>>(nr_training_poses, vector<int>()));
@@ -170,7 +153,6 @@ vector<Sample> networkSolver::buildBatch(int batch_size, int iter, bool bootstra
 
 void networkSolver::trainNet(int resume_iter)
 {
-
     // Set network parameters
     caffe::SolverParameter solver_param;
     solver_param.set_base_lr(learning_rate);
@@ -206,7 +188,7 @@ void networkSolver::trainNet(int resume_iter)
     vector<Sample> batch;
     int triplet_size = 5;
     int epoch_iter = nr_objects * nr_training_poses / (batch_size/triplet_size);
-        epoch_iter = 10;
+//        epoch_iter = 10;
     bool bootstrapping = false;
 
     // Perform training

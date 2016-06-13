@@ -38,9 +38,29 @@ public:
     vector<Sample> createTemplatesWadim(Model &model, Matrix3f &cam, int index, int rotInv, int subdiv);
     void createSceneSamplesAndTemplates();
     void saveSamples();
-    void generateDatasets(vector<vector<Sample>>& trainingSet, vector<vector<Sample>>& testSet, vector<vector<Sample>>& templates);
+    void generateDatasets();
+    void computeQuaternions();
     void addNoiseToSynthData(unsigned int copies, vector<vector<Sample>>& trainingSet);
+
+    const vector<vector<Sample>>& getTrainingSet() const {return training_set;}
+    const vector<vector<Sample>>& getTemplateSet() const {return templates;}
+    const vector<vector<Sample>>& getTestSet() const {return training_set;}
+    const vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>& getTmplQuats() const {return tmpl_quats;}
+    const vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>>& getTrainingQuats() const {return training_quats;}
+    const vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>>& getTestQuats() const {return test_quats;}
+
+    int getTrainingSetSize() {return training_set[0].size();}
+    int getTemplateSetSize() {return templates[0].size();}
+    int getTestSetSize() {return test_set[0].size();}
+    int getNrObjects() {return used_models.size();}
+
+
 private:
+    vector<vector<Sample>> training_set, test_set, templates;
+    vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>> tmpl_quats;
+    vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>> training_quats, test_quats;
+    unsigned int nr_objects, nr_training_poses, nr_template_poses, nr_test_poses;
+
     string dataset_path, hdf5_path;
     vector<string> models, used_models;
     unordered_map<string,int> model_index;
