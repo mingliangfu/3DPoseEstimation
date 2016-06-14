@@ -57,7 +57,7 @@ private:
     unsigned int step_size;
     string network_path, net_name, learning_policy;
     float learning_rate, momentum, weight_decay, gamma;
-    bool gpu;
+    bool gpu, binarization;
 };
 
 #endif // NETWORKSOLVER_H

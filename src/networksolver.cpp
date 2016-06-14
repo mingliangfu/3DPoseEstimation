@@ -312,6 +312,8 @@ void networkSolver::readParam(string config)
     step_size = pt.get<unsigned int>("train.step_size");
     gamma = pt.get<float>("train.gamma");
     gpu = pt.get<bool>("train.gpu");
+    binarization = pt.get<bool>("train.binarization");
+
     if (gpu) caffe::Caffe::set_mode(caffe::Caffe::GPU);
     used_models = to_array<string>(pt.get<string>("input.used_models"));
 
