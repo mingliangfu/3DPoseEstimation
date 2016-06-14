@@ -45,7 +45,7 @@ public:
     const vector<vector<Sample>>& getTrainingSet() const {return training_set;}
     const vector<vector<Sample>>& getTemplateSet() const {return templates;}
     const vector<vector<Sample>>& getTestSet() const {return training_set;}
-    const vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>& getTmplQuats() const {return tmpl_quats;}
+    const vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>>& getTmplQuats() const {return tmpl_quats;}
     const vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>>& getTrainingQuats() const {return training_quats;}
     const vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>>& getTestQuats() const {return test_quats;}
 
@@ -56,14 +56,13 @@ public:
 
 
 private:
-    vector<vector<Sample>> training_set, test_set, templates;
-    vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>> tmpl_quats;
-    vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>> training_quats, test_quats;
+    vector<vector<Sample>> templates, training_set, test_set;
+    vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>> tmpl_quats, training_quats, test_quats;
     unsigned int nr_objects, nr_training_poses, nr_template_poses, nr_test_poses;
 
     string dataset_path, hdf5_path;
     vector<string> models, used_models;
-    unordered_map<string,int> model_index;
+    unordered_map<string,int> model_index, global_model_index;
     vector<int> rotInv;
     hdf5Handler h5;
 

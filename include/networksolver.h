@@ -48,8 +48,7 @@ private:
     // Const references to db objects
     datasetManager *db;
     const vector<vector<Sample>>& templates, training_set, test_set;
-    const vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>& tmpl_quats;
-    const vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>>& training_quats, test_quats;
+    const vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>>& tmpl_quats, training_quats, test_quats;
 
     // Config parameters
     vector<string> used_models;

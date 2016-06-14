@@ -110,7 +110,7 @@ void networkSolver::trainNet(int resume_iter)
     caffe::SGDSolver<float> solver(solver_param);
 
     if (resume_iter > 0) {
-        string resume_file = network_path + net_name + "_iter_" + to_string(resume_iter) + ".solverstate";
+        string resume_file = net_name + "_iter_" + to_string(resume_iter) + ".solverstate";
         solver.Restore(resume_file.c_str());
     }
 
@@ -338,12 +338,12 @@ void networkSolver::computeMaxSimTmpl()
         {
             float best_dist = numeric_limits<float>::max();
             float best_dist2 = numeric_limits<float>::max(); // second best
-            int sim_tmpl;
+            int sim_tmpl, sim_tmpl2;
 
             // - push back the first most similar template
             for (size_t tmpl_pose = 0; tmpl_pose < nr_template_poses; tmpl_pose++)
             {
-                float temp_dist = training_quats[object][training_pose].angularDistance(tmpl_quats[tmpl_pose]);
+                float temp_dist = training_quats[object][training_pose].angularDistance(tmpl_quats[object][tmpl_pose]);
                 if (temp_dist >= best_dist) continue;
                 best_dist = temp_dist;
                 sim_tmpl = tmpl_pose;
@@ -351,14 +351,20 @@ void networkSolver::computeMaxSimTmpl()
             maxSimTmpl[object][training_pose].push_back(sim_tmpl);
 
             // - push back the second most similar template
-            for (size_t tmpl_pose1 = 0; tmpl_pose1 < nr_template_poses; tmpl_pose1++)
+            for (size_t tmpl_pose = 0; tmpl_pose < nr_template_poses; tmpl_pose++)
             {
-                float temp_dist = training_quats[object][training_pose].angularDistance(tmpl_quats[tmpl_pose1]);
+                float temp_dist = training_quats[object][training_pose].angularDistance(tmpl_quats[object][tmpl_pose]);
                 if (temp_dist >= best_dist2 || temp_dist == best_dist) continue;
                 best_dist2 = temp_dist;
-                sim_tmpl = tmpl_pose1;
+                sim_tmpl2 = tmpl_pose;
             }
-            maxSimTmpl[object][training_pose].push_back(sim_tmpl);
+            maxSimTmpl[object][training_pose].push_back(sim_tmpl2);
+#if 0
+            imshow("training sample",showRGBDPatch(training_set[object][training_pose].data,false));
+            imshow("similar template 1",showRGBDPatch(templates[object][sim_tmpl].data,false));
+            imshow("similar template 2",showRGBDPatch(templates[object][sim_tmpl2].data,false));
+            waitKey();
+#endif
         }
     }
 }

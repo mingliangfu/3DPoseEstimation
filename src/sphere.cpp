@@ -81,8 +81,8 @@ vector<RenderView, Eigen::aligned_allocator<RenderView> > SphereRenderer::create
         for(Vector3f &pos : sphere)
         {
             if((pos(2) < 0) && skipLowerHemi) continue;  // Skip the lower hemisphere of the object
-            if((pos(1) < 0 || pos(1) > 0.35/subdiv || pos(0) < 0) && rotInv == 1) {skipped++; continue;} // Store the views with fixed azimuth (y==0) (for rot. inv. objects)
             if((pos(0) < 0) && rotInv == 2) {skipped++; continue;} // Skip negative x-part (for symmetric objects)
+            if((pos(1) < 0 || pos(1) > 0.35/subdiv || pos(0) < 0) && rotInv == 1) {skipped++; continue;} // Store the views with fixed azimuth (y==0) (for rot. inv. objects)
 //            cout << "Pose: " << pos(0) << ", " << pos(1) << ", " << pos(2) << endl;
 
             for(float curr_rot : rots)

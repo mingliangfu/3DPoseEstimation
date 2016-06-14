@@ -14,6 +14,9 @@ datasetManager::datasetManager(string config)
 
     // For each object build a mapping from model name to index number
     for (size_t i = 0; i < used_models.size(); ++i) model_index[used_models[i]] = i;
+    // Global mapping
+    for (size_t i = 0; i < models.size(); ++i) global_model_index[models[i]] = i;
+
 }
 
 Benchmark datasetManager::loadLinemodBenchmark(string linemod_path, string sequence, int count /*=-1*/)
@@ -262,7 +265,7 @@ vector<Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, 
     Vector3f scales(0.4, 1.1, 1.0);     // Render from 0.4 meters
     Vector3f in_plane_rots(0,15,10);  // Render in_plane_rotations from -45 degree to 45 degree in 15degree steps
     vector<RenderView, Eigen::aligned_allocator<RenderView> > views =
-            sphere.createViews(model,subdiv,scales,in_plane_rots,true,false,rotInv, subdiv);    // Equidistant sphere sampling with recursive level subdiv
+            sphere.createViews(model,subdiv,scales,in_plane_rots,true,false,rotInv,subdiv);    // Equidistant sphere sampling with recursive level subdiv
 
     vector<Sample> samples;
     for (RenderView &v : views)
@@ -315,9 +318,9 @@ void datasetManager::createSceneSamplesAndTemplates()
         clog << "  - render synthetic data:" << endl;
         // - create synthetic samples and templates
         int subdivTmpl = 3; // sphere subdivision factor for templates
-        vector<Sample> templates = createTemplatesWadim(model, bench.cam, model_index[model_name], rotInv[model_index[model_name]], subdivTmpl);
+        vector<Sample> templates = createTemplatesWadim(model, bench.cam, model_index[model_name], rotInv[global_model_index[model_name]], subdivTmpl);
         vector<Sample> synthSamples = createTemplatesWadim(model, bench.cam, model_index[model_name], 0, subdivTmpl+1);
-        //  vector<Sample> temp = createTemplatesPaul(model, bench.cam, model_index[model_name], rotInv[model_index[model_name]]);
+        //  vector<Sample> temp = createTemplatesPaul(model, bench.cam, model_index[model_name], rotInv[global_model_index[model_name]]);
         //  vector<Sample> templates (temp.begin(),temp.begin() + 301);
         //  vector<Sample> synthSamples (temp.begin() + 302, temp.end());
 
@@ -349,11 +352,11 @@ void datasetManager::generateDatasets()
         unsigned int nr_synth_poses = train_synth.size();
         unsigned int nr_real_poses = train_real.size();
 
-        // - read quaternion poses from templates (they are identical for all objects)
+        // - read quaternion poses from templates
         vector<Quaternionf, Eigen::aligned_allocator<Quaternionf> > tmpl_quats(nr_template_poses);
         for  (size_t i=0; i < nr_template_poses; ++i)
             for (size_t j=0; j < 4; ++j)
-                tmpl_quats[i].coeffs()(j) = templates[0][i].label.at<float>(0,1+j);
+                tmpl_quats[i].coeffs()(j) = templates.back()[i].label.at<float>(0,1+j);
 
         // - read quaternion poses from synthetic data
         vector<Quaternionf, Eigen::aligned_allocator<Quaternionf> > synth_quats(nr_synth_poses);
@@ -424,10 +427,13 @@ void datasetManager::generateDatasets()
 void datasetManager::computeQuaternions()
 {
     // Read quaternion poses from templates (they are identical for all objects)
-    tmpl_quats.assign(nr_template_poses, Quaternionf());
-    for  (size_t i = 0; i < nr_template_poses; ++i)
-        for (size_t j = 0; j < 4; ++j)
-            tmpl_quats[i].coeffs()(j) = templates[0][i].label.at<float>(0,1+j);
+    tmpl_quats.assign(nr_objects, vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>());
+    for  (size_t i = 0; i < nr_objects; ++i) {
+        tmpl_quats[i].resize(templates[i].size());
+        for (size_t k = 0; k < tmpl_quats[i].size(); ++k)
+            for (int j = 0; j < 4; ++j)
+                tmpl_quats[i][k].coeffs()(j) = templates[i][k].label.at<float>(0,1+j);
+    }
 
     // Read quaternion poses from training data
     training_quats.assign(nr_objects, vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>());
