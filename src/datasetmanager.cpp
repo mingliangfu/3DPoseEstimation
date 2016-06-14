@@ -402,11 +402,11 @@ void datasetManager::generateDatasets()
 
     // Crop and shuffle the sets
     unsigned int min_training = numeric_limits<int>::max(), min_test = numeric_limits<int>::max();
-    for (int object = 0; object < nr_objects; ++object) {
+    for (size_t object = 0; object < nr_objects; ++object) {
         if (min_training >= training_set[object].size()) min_training = training_set[object].size();
         if (min_test >= test_set[object].size()) min_test = test_set[object].size();
     }
-    for (int object = 0; object < nr_objects; ++object) {
+    for (size_t object = 0; object < nr_objects; ++object) {
         training_set[object].resize(min_training);
         test_set[object].resize(min_test);
         random_shuffle(training_set[object].begin(), training_set[object].end());

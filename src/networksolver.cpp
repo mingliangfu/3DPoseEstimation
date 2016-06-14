@@ -1,68 +1,11 @@
 #include "networksolver.h"
 
-networkSolver::networkSolver(string config, datasetManager* db): db(db), training_set(db->getTrainingSet()), templates(db->getTemplateSet()),
-                                                                 test_set(db->getTemplateSet()), training_quats(db->getTrainingQuats()),
-                                                                 tmpl_quats(db->getTmplQuats()), test_quats(db->getTestQuats())
+networkSolver::networkSolver(string config, datasetManager* db): db(db), templates(db->getTemplateSet()), training_set(db->getTrainingSet()),
+                                                                 test_set(db->getTemplateSet()), tmpl_quats(db->getTmplQuats()),
+                                                                 training_quats(db->getTrainingQuats()), test_quats(db->getTestQuats())
 {
-    // Read learning parameters
-    boost::property_tree::ptree pt;
-    boost::property_tree::ini_parser::read_ini(config, pt);
-
-    network_path = pt.get<string>("paths.network_path");
-    net_name = pt.get<string>("train.net_name");
-    num_epochs = pt.get<unsigned int>("train.num_epochs");
-    num_training_rounds = pt.get<unsigned int>("train.num_training_rounds");
-    learning_rate =  pt.get<float>("train.learning_rate");
-    momentum = pt.get<float>("train.momentum");
-    weight_decay =  pt.get<float>("train.weight_decay");
-    learning_policy = pt.get<string>("train.learning_policy");
-    step_size = pt.get<unsigned int>("train.step_size");
-    gamma = pt.get<float>("train.gamma");
-    gpu = pt.get<bool>("train.gpu");
-    if (gpu) caffe::Caffe::set_mode(caffe::Caffe::GPU);
-
-    used_models = to_array<string>(pt.get<string>("input.used_models"));
-
-    // Save dataset parameters
-    nr_objects = used_models.size();
-    nr_training_poses = db->getTrainingSetSize();
-    nr_template_poses = db->getTemplateSetSize();
-    nr_test_poses = db->getTestSetSize();
-
-    // For each object build a mapping from model name to index number
-    for (size_t i = 0; i < nr_objects; ++i) model_index[used_models[i]] = i;
-
-    // Calculate maxSimTmpl: find the 2 most similar templates for each object in the training set
-    maxSimTmpl.assign(nr_objects, vector<vector<int>>(nr_training_poses, vector<int>()));
-    for (int object = 0; object < nr_objects; ++object)
-    {
-        for (int training_pose = 0; training_pose < nr_training_poses; ++training_pose)
-        {
-            float best_dist = numeric_limits<float>::max();
-            float best_dist2 = numeric_limits<float>::max(); // second best
-            int sim_tmpl;
-
-            // - push back the first most similar template
-            for (size_t tmpl_pose = 0; tmpl_pose < nr_template_poses; tmpl_pose++)
-            {
-                float temp_dist = training_quats[object][training_pose].angularDistance(tmpl_quats[tmpl_pose]);
-                if (temp_dist >= best_dist) continue;
-                best_dist = temp_dist;
-                sim_tmpl = tmpl_pose;
-            }
-            maxSimTmpl[object][training_pose].push_back(sim_tmpl);
-
-            // - push back the second most similar template
-            for (size_t tmpl_pose1 = 0; tmpl_pose1 < nr_template_poses; tmpl_pose1++)
-            {
-                float temp_dist = training_quats[object][training_pose].angularDistance(tmpl_quats[tmpl_pose1]);
-                if (temp_dist >= best_dist2 || temp_dist == best_dist) continue;
-                best_dist2 = temp_dist;
-                sim_tmpl = tmpl_pose1;
-            }
-            maxSimTmpl[object][training_pose].push_back(sim_tmpl);
-        }
-    }
+    // Read config parameters
+    readParam(config);
 }
 
 vector<Sample> networkSolver::buildBatch(int batch_size, int iter, bool bootstrapping)
@@ -185,16 +128,19 @@ void networkSolver::trainNet(int resume_iter)
     vector<float> data(batch_size*img_size,0), labels(batch_size,0);
 
     vector<Sample> batch;
-    int triplet_size = 5;
-    int epoch_iter = nr_objects * nr_training_poses / (batch_size/triplet_size);
+    unsigned int triplet_size = 5;
+    unsigned int epoch_iter = nr_objects * nr_training_poses / (batch_size/triplet_size);
     bool bootstrapping = false;
 
+    // Compute MaxSimTmpls to build batches
+    computeMaxSimTmpl();
+
     // Perform training
-    for (int training_round = 0; training_round < num_training_rounds; ++training_round)
+    for (size_t training_round = 0; training_round < num_training_rounds; ++training_round)
     {
-        for (int epoch = 0; epoch < num_epochs; epoch++)
+        for (size_t epoch = 0; epoch < num_epochs; epoch++)
         {
-            for (int iter = 0; iter < epoch_iter; iter++)
+            for (size_t iter = 0; iter < epoch_iter; iter++)
             {
                 // Fill current batch
                 batch = buildBatch(batch_size, iter, bootstrapping);
@@ -255,7 +201,7 @@ void networkSolver::computeKNN(caffe::Net<float> &CNN)
 
     maxSimKNNTmpl.assign(nr_objects, vector<vector<int>>(nr_training_poses, vector<int>()));
 
-    for (size_t linearId = 0; linearId < DBtraining.rows; ++linearId) {
+    for (size_t linearId = 0; linearId < (unsigned)DBtraining.rows; ++linearId) {
 
         // - get the test set indices (1D -> 2D)
         int query_object = linearId / nr_training_poses;
@@ -347,6 +293,74 @@ void networkSolver::visualizeKNN(caffe::Net<float> &CNN, vector<string> test_mod
         }
     }
 }
+
+void networkSolver::readParam(string config)
+{
+    // Initialize the parser
+    boost::property_tree::ptree pt;
+    boost::property_tree::ini_parser::read_ini(config, pt);
+
+    // Read learning parameters
+    network_path = pt.get<string>("paths.network_path");
+    net_name = pt.get<string>("train.net_name");
+    num_epochs = pt.get<unsigned int>("train.num_epochs");
+    num_training_rounds = pt.get<unsigned int>("train.num_training_rounds");
+    learning_rate =  pt.get<float>("train.learning_rate");
+    momentum = pt.get<float>("train.momentum");
+    weight_decay =  pt.get<float>("train.weight_decay");
+    learning_policy = pt.get<string>("train.learning_policy");
+    step_size = pt.get<unsigned int>("train.step_size");
+    gamma = pt.get<float>("train.gamma");
+    gpu = pt.get<bool>("train.gpu");
+    if (gpu) caffe::Caffe::set_mode(caffe::Caffe::GPU);
+    used_models = to_array<string>(pt.get<string>("input.used_models"));
+
+    // Save dataset parameters
+    nr_objects = used_models.size();
+    nr_training_poses = db->getTrainingSetSize();
+    nr_template_poses = db->getTemplateSetSize();
+    nr_test_poses = db->getTestSetSize();
+
+    // For each object build a mapping from model name to index number
+    for (size_t i = 0; i < nr_objects; ++i) model_index[used_models[i]] = i;
+
+}
+
+void networkSolver::computeMaxSimTmpl()
+{
+    // Calculate maxSimTmpl: find the 2 most similar templates for each object in the training set
+    maxSimTmpl.assign(nr_objects, vector<vector<int>>(nr_training_poses, vector<int>()));
+    for (size_t object = 0; object < nr_objects; ++object)
+    {
+        for (size_t training_pose = 0; training_pose < nr_training_poses; ++training_pose)
+        {
+            float best_dist = numeric_limits<float>::max();
+            float best_dist2 = numeric_limits<float>::max(); // second best
+            int sim_tmpl;
+
+            // - push back the first most similar template
+            for (size_t tmpl_pose = 0; tmpl_pose < nr_template_poses; tmpl_pose++)
+            {
+                float temp_dist = training_quats[object][training_pose].angularDistance(tmpl_quats[tmpl_pose]);
+                if (temp_dist >= best_dist) continue;
+                best_dist = temp_dist;
+                sim_tmpl = tmpl_pose;
+            }
+            maxSimTmpl[object][training_pose].push_back(sim_tmpl);
+
+            // - push back the second most similar template
+            for (size_t tmpl_pose1 = 0; tmpl_pose1 < nr_template_poses; tmpl_pose1++)
+            {
+                float temp_dist = training_quats[object][training_pose].angularDistance(tmpl_quats[tmpl_pose1]);
+                if (temp_dist >= best_dist2 || temp_dist == best_dist) continue;
+                best_dist2 = temp_dist;
+                sim_tmpl = tmpl_pose1;
+            }
+            maxSimTmpl[object][training_pose].push_back(sim_tmpl);
+        }
+    }
+}
+
 
 
 

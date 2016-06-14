@@ -21,7 +21,7 @@ class networkEvaluator
 public:
     networkEvaluator();
     static Mat computeDescriptors(caffe::Net<float> &CNN, vector<Sample> samples);
-    static void computeKNNAccuracy(caffe::Net<float> &CNN, vector<vector<vector<int> > > &maxSimTmpl, vector<vector<vector<int> > > &maxSimKNNTmpl);
+    static void computeKNNAccuracy(vector<vector<vector<int> > > &maxSimTmpl, vector<vector<vector<int> > > &maxSimKNNTmpl);
     static void visualizeManifold(caffe::Net<float> &CNN, const vector<vector<Sample> > &templates, int iter);
 };
 

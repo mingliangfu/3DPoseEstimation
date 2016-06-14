@@ -88,7 +88,7 @@ void networkEvaluator::visualizeManifold(caffe::Net<float> &CNN, const vector<ve
 }
 
 
-void networkEvaluator::computeKNNAccuracy(caffe::Net<float> &CNN, vector<vector<vector<int>>> &maxSimTmpl, vector<vector<vector<int>>> &maxSimKNNTmpl)
+void networkEvaluator::computeKNNAccuracy(vector<vector<vector<int>>> &maxSimTmpl, vector<vector<vector<int>>> &maxSimKNNTmpl)
 {
     int intra = 0, inter = 0;
     int nr_objects = maxSimTmpl.size();

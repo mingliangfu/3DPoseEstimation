@@ -36,6 +36,9 @@ public:
     bool bootstrap(caffe::Net<float> &CNN, int iter);
 
 private:
+    void readParam(string config);
+    void computeMaxSimTmpl();
+
     hdf5Handler h5;
     std::random_device ran;
     vector<vector<vector<int>>> maxSimTmpl, maxSimKNNTmpl;
@@ -44,7 +47,7 @@ private:
 
     // Const references to db objects
     datasetManager *db;
-    const vector<vector<Sample>>& training_set, test_set, templates;
+    const vector<vector<Sample>>& templates, training_set, test_set;
     const vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>& tmpl_quats;
     const vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>>& training_quats, test_quats;
 
