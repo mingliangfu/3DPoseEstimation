@@ -41,7 +41,7 @@ public:
     void generateDatasets();
     void computeQuaternions();
     void addNoiseToSynthData(unsigned int copies, vector<vector<Sample>>& trainingSet);
-
+    void randomColorFill(Mat &patch);
     const vector<vector<Sample>>& getTrainingSet() const {return training_set;}
     const vector<vector<Sample>>& getTemplateSet() const {return templates;}
     const vector<vector<Sample>>& getTestSet() const {return training_set;}
@@ -55,9 +55,12 @@ public:
     int getNrObjects() {return used_models.size();}
 
 
-private:
+
     vector<vector<Sample>> templates, training_set, test_set;
     vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>> tmpl_quats, training_quats, test_quats;
+    std::random_device ran;
+
+
     unsigned int nr_objects, nr_training_poses, nr_template_poses, nr_test_poses;
 
     string dataset_path, hdf5_path;

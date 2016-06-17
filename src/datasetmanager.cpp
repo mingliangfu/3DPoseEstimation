@@ -300,7 +300,7 @@ void datasetManager::createSceneSamplesAndTemplates()
 
         // - load model
         Model model;
-        model.loadPLY(dataset_path + model_name + ".ply");
+        model.loadFile(dataset_path + model_name + ".ply");
 
         // - load frames of benchmark and visualize
         Benchmark bench = loadLinemodBenchmark(dataset_path, model_name);
@@ -452,6 +452,20 @@ void datasetManager::computeQuaternions()
             for (int j = 0; j < 4; ++j)
                 test_quats[i][k].coeffs()(j) = test_set[i][k].label.at<float>(0,1+j);
     }
+}
+
+void datasetManager::randomColorFill(Mat &patch)
+{
+    int chans = patch.channels();
+    std::uniform_real_distribution<float> p(0.f,1.f);
+    for (int r=0; r < patch.rows; ++r)
+        for (int c=0; c < patch.cols; ++c)
+        {
+            float *row = patch.ptr<float>(r);
+            if (row[c*chans + 3] > 0) continue;
+            for (int ch=0; ch < 3; ++ch)
+                row[c*chans + ch] =  p(ran);
+        }
 }
 
 void datasetManager::addNoiseToSynthData(unsigned int copies, vector<vector<Sample>>& trainingSet)

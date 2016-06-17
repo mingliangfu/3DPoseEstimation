@@ -7,6 +7,7 @@
 #include <boost/filesystem.hpp>
 
 #include <opencv2/viz.hpp>
+#include <opencv2/highgui.hpp>
 
 #include "model.h"
 #include "painter.h"
@@ -57,8 +58,8 @@ void Model::bindVBOs()
     m_vertex_data.resize(m_points.size()*2);
     for (uint i=0; i < m_points.size();++i)
     {
-        m_vertex_data[i*2+0] = m_points[i];
-        m_vertex_data[i*2+1] = m_colors[i];
+        memcpy(&m_vertex_data[i*2+0], m_points[i].data(),sizeof(Vec3f));
+        memcpy(&m_vertex_data[i*2+1], m_colors[i].data(),sizeof(Vec3f));
         //m_vertex_data[i*2+1] = m_localCoordColors[i];
     }
 #ifdef USE_VBO  // Bind VBO data onto GPU
@@ -71,7 +72,7 @@ float Model::computeMeshResolution()
 {
     assert(!m_faces.empty());
     float meshResolution = 0;
-    for (Vector3i &tri : m_faces)
+    for (Vec3i &tri : m_faces)
     {
         meshResolution += (m_points[tri(0)]-m_points[tri(1)]).norm();
         meshResolution += (m_points[tri(1)]-m_points[tri(2)]).norm();
@@ -107,7 +108,7 @@ vector<bool> Model::computeEdgePoints()
     vector< vector<int> > vert2face(m_points.size());
     for (uint i=0; i < m_faces.size(); ++i)
     {
-        Vector3i &tri = m_faces[i];
+        Vec3i &tri = m_faces[i];
         edges.push_back(Vector2i(tri(0),tri(1)));
         edges.push_back(Vector2i(tri(1),tri(2)));
         edges.push_back(Vector2i(tri(2),tri(0)));
@@ -122,7 +123,7 @@ vector<bool> Model::computeEdgePoints()
         int counter=0;
         for (int i : vert2face[e(0)])
         {
-            Vector3i &tri = m_faces[i];
+            Vec3i &tri = m_faces[i];
             if(tri(0)==e(1) || tri(1)==e(1) || tri(2)==e(1))
                 counter++;
         }
@@ -153,7 +154,7 @@ void Model::computeVertexNormals()
         Vector3f normal(0,0,0);
         for (int v : vert2face[i])
         {
-            Vector3i &f = m_faces[v];
+            Vec3i &f = m_faces[v];
             normal += (m_points[f(1)] - m_points[f(0)]).cross(m_points[f(2)] - m_points[f(0)]);
         }
         assert(normal.allFinite());
@@ -236,16 +237,23 @@ void Model::savePLY(string filename)
 
 /***************************************************************************/
 
-bool Model::loadPLY(string filename)
+bool Model::loadFile(string file)
 {
 
-    if (!boost::filesystem::exists(filename))
+    if (!boost::filesystem::exists(file))
     {
-        cerr << filename << " does not exist" << endl;
+        cerr << file << " does not exist" << endl;
         return false;
     }
 
-    cv::viz::Mesh mesh = cv::viz::Mesh::load(filename);
+    string name = file.substr(0,file.size()-4);
+    cerr << name << endl;
+    int mode = file.substr(file.size()-3)=="ply" ? cv::viz::Mesh::LOAD_PLY : cv::viz::Mesh::LOAD_OBJ;
+    if (mode == cv::viz::Mesh::LOAD_OBJ)
+        m_texture = imread(name + ".png");
+
+
+    cv::viz::Mesh mesh = cv::viz::Mesh::load(file,mode);
 
     m_points.resize(mesh.cloud.cols);
     for (int i=0; i < mesh.cloud.cols; ++i)
@@ -256,7 +264,7 @@ bool Model::loadPLY(string filename)
     {
         Vector4i &tri = mesh.polygons.at<Vector4i>(0,i);
         assert(tri(0)==3);    // Assert that all faces are triangles
-        m_faces.push_back(Vector3i(tri(1),tri(2),tri(3)));
+        m_faces.push_back(Vec3i(tri(1),tri(2),tri(3)));
     }
 
     m_colors.clear();
@@ -270,6 +278,11 @@ bool Model::loadPLY(string filename)
         Vec3b &col = mesh.colors.at<Vec3b>(0,i);
         m_colors.push_back(Vector3f(col[0],col[1],col[2]));
     }
+
+    m_tcoords.clear();
+    for (int i=0; i < mesh.tcoords.cols; ++i)
+        m_tcoords.push_back(mesh.tcoords.at<Vec2f>(0,i));
+    mesh.texture.copyTo(m_texture);
 
     assert(!m_points.empty());
 
