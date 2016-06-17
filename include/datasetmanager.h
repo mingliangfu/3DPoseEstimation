@@ -55,12 +55,9 @@ public:
     int getNrObjects() {return used_models.size();}
 
 
-
-    vector<vector<Sample>> templates, training_set, test_set;
-    vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>> tmpl_quats, training_quats, test_quats;
     std::random_device ran;
-
-
+    vector<vector<Sample>> training_set, test_set, templates;
+    vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>> training_quats, test_quats, tmpl_quats;
     unsigned int nr_objects, nr_training_poses, nr_template_poses, nr_test_poses;
 
     string dataset_path, hdf5_path;
