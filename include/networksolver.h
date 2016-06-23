@@ -38,25 +38,29 @@ public:
 private:
     void readParam(string config);
     void computeMaxSimTmpl();
+    int getTmplVertex(int object, int pose){return templates[object][pose].label.at<float>(0,5);}
+    int getTmplRot(int object, int pose){return templates[object][pose].label.at<float>(0,6);}
 
     hdf5Handler h5;
     std::random_device ran;
     vector<vector<vector<int>>> maxSimTmpl, maxSimKNNTmpl;
-    unordered_map<string,int> model_index;
+    unordered_map<string,int> model_index, global_model_index;
+    vector<int> rotInv;
     unsigned int nr_objects, nr_training_poses, nr_template_poses, nr_test_poses;
 
     // Const references to db objects
     datasetManager *db;
+    const vector<vector<int>>& vertex_tmpl;
     const vector<vector<Sample>>& templates, training_set, test_set;
     const vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>>& tmpl_quats, training_quats, test_quats;
 
     // Config parameters
-    vector<string> used_models;
+    vector<string> used_models, models;
     unsigned int num_epochs, num_training_rounds;
     unsigned int step_size;
     string network_path, net_name, learning_policy;
     float learning_rate, momentum, weight_decay, gamma;
-    bool gpu, binarization;
+    bool gpu, binarization, inplane;
 };
 
 #endif // NETWORKSOLVER_H

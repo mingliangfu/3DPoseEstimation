@@ -148,7 +148,6 @@ vector<Sample> datasetManager::extractSceneSamplesWadim(vector<Frame,Eigen::alig
     vector<Sample> samples;
     for (Frame &f : frames)
     {
-
         // Instead of taking object centroid, take the surface point as central sample point
         Vector3f projCentroid = cam*f.gt.translation();
         projCentroid /= projCentroid(2);
@@ -171,7 +170,7 @@ vector<Sample> datasetManager::extractSceneSamplesWadim(vector<Frame,Eigen::alig
     return samples;
 }
 
-vector<Sample> datasetManager::createTemplatesPaul(Model &model, Matrix3f &cam, int index, int rotInv)
+vector<Sample> datasetManager::createTemplatesPaul(Model &model, Matrix3f &cam, int index)
 {
 
     ifstream file(dataset_path + "paul/camPositionsElAz.txt");
@@ -180,53 +179,19 @@ vector<Sample> datasetManager::createTemplatesPaul(Model &model, Matrix3f &cam, 
 
     // Read all camera poses from file (given in elevation and azimuth)
     vector<Matrix3f, Eigen::aligned_allocator<Matrix3f> > camPos;
-    float last_el = 0;
-    int coordId = 0;
     for(Vector2f &v : sphereCoords)
     {
         file >> v(0) >> v(1);
-        if (rotInv == 1)
-        {
-            if (abs(last_el - v(0)) <= 0.01 && coordId != 0 && coordId < 302) {
-                camPos.push_back(camPos.back());
-            } else {
-                // Copied from basetypes.py lines 100-xxx
-                // To move into el=0,az=0 position we first have to rotate 45deg around x
-                AngleAxisf camRot0(M_PI/2,Vector3f(1,0,0));
 
-                // Build rotation matrix from spherical coordinates
-                AngleAxisf el(v(0),Vector3f(1,0,0));
-                AngleAxisf az(-v(1),Vector3f(0,0,1));
-                Matrix3f camRot = (el*az).toRotationMatrix();
-                camPos.push_back(camRot0*camRot);
-            }
-        } else if (rotInv == 2 && coordId < 302) {
-            if (v(1) > 0) {
-                // Copied from basetypes.py lines 100-xxx
-                // To move into el=0,az=0 position we first have to rotate 45deg around x
-                AngleAxisf camRot0(M_PI/2,Vector3f(1,0,0));
+        // Copied from basetypes.py lines 100-xxx
+        // To move into el=0,az=0 position we first have to rotate 45deg around x
+        AngleAxisf camRot0(M_PI/2,Vector3f(1,0,0));
 
-                // Build rotation matrix from spherical coordinates
-                AngleAxisf el(v(0),Vector3f(1,0,0));
-                AngleAxisf az(-v(1),Vector3f(0,0,1));
-                Matrix3f camRot = (el*az).toRotationMatrix();
-                camPos.push_back(camRot0*camRot);
-            } else {
-                camPos.push_back(camPos.back());
-            }
-        } else {
-            // Copied from basetypes.py lines 100-xxx
-            // To move into el=0,az=0 position we first have to rotate 45deg around x
-            AngleAxisf camRot0(M_PI/2,Vector3f(1,0,0));
-
-            // Build rotation matrix from spherical coordinates
-            AngleAxisf el(v(0),Vector3f(1,0,0));
-            AngleAxisf az(-v(1),Vector3f(0,0,1));
-            Matrix3f camRot = (el*az).toRotationMatrix();
-            camPos.push_back(camRot0*camRot);
-        }
-        last_el = v(0);
-        coordId++;
+        // Build rotation matrix from spherical coordinates
+        AngleAxisf el(v(0),Vector3f(1,0,0));
+        AngleAxisf az(-v(1),Vector3f(0,0,1));
+        Matrix3f camRot = (el*az).toRotationMatrix();
+        camPos.push_back(camRot0*camRot);
     }
 
     // Render each and create proper sample
@@ -257,7 +222,7 @@ vector<Sample> datasetManager::createTemplatesPaul(Model &model, Matrix3f &cam, 
     return samples;
 }
 
-vector<Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, int index, int rotInv, int subdiv)
+vector<Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, int index, int subdiv)
 {
 
     // Create synthetic views
@@ -265,8 +230,9 @@ vector<Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, 
     Vector3f scales(0.4, 1.1, 1.0);     // Render from 0.4 meters
     Vector3f in_plane_rots(0,15,10);  // Render in_plane_rotations from -45 degree to 45 degree in 15degree steps
     vector<RenderView, Eigen::aligned_allocator<RenderView> > views =
-            sphere.createViews(model,subdiv,scales,in_plane_rots,true,false,rotInv,subdiv);    // Equidistant sphere sampling with recursive level subdiv
+            sphere.createViews(model,subdiv,scales,in_plane_rots,true,false);  // Equidistant sphere sampling with recursive level subdiv
 
+    int vertex = 0, curr_rot = in_plane_rots(0);
     vector<Sample> samples;
     for (RenderView &v : views)
     {
@@ -277,12 +243,21 @@ vector<Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, 
         Sample sample;
         sample.data = samplePatchWithScale(v.col,v.dep,cam(0,2),cam(1,2),v.pose.translation()(2),cam(0,0),cam(1,1));
 
-        // Build 5-dimensional label: model index + quaternion
-        sample.label = Mat(1,5,CV_32F);
+        // Build 6-dimensional label: model index + quaternion + vertex + in-plane rotation
+        sample.label = Mat(1,7,CV_32F);
         sample.label.at<float>(0,0) = index;
         Quaternionf q(v.pose.linear());
         for (int i=0; i < 4; ++i)
             sample.label.at<float>(0,1+i) = q.coeffs()(i);
+        sample.label.at<float>(0,5) = vertex;
+        sample.label.at<float>(0,6) = curr_rot;
+
+        if (curr_rot == in_plane_rots(2)) {
+            curr_rot = in_plane_rots(0);
+            vertex++;
+        } else {
+            curr_rot = curr_rot + in_plane_rots(1);
+        }
 
         samples.push_back(sample);
     }
@@ -317,12 +292,12 @@ void datasetManager::createSceneSamplesAndTemplates()
         // Synthetic data
         clog << "  - render synthetic data:" << endl;
         // - create synthetic samples and templates
-        int subdivTmpl = 3; // sphere subdivision factor for templates
-        vector<Sample> templates = createTemplatesWadim(model, bench.cam, model_index[model_name], rotInv[global_model_index[model_name]], subdivTmpl);
-        vector<Sample> synthSamples = createTemplatesWadim(model, bench.cam, model_index[model_name], 0, subdivTmpl+1);
-        //  vector<Sample> temp = createTemplatesPaul(model, bench.cam, model_index[model_name], rotInv[global_model_index[model_name]]);
-        //  vector<Sample> templates (temp.begin(),temp.begin() + 301);
-        //  vector<Sample> synthSamples (temp.begin() + 302, temp.end());
+        int subdivTmpl = 2; // sphere subdivision factor for templates
+        vector<Sample> templates = createTemplatesWadim(model, bench.cam, model_index[model_name], subdivTmpl);
+        vector<Sample> synthSamples = createTemplatesWadim(model, bench.cam, model_index[model_name], subdivTmpl+1);
+//          vector<Sample> temp = createTemplatesPaul(model, bench.cam, model_index[model_name], rotInv[global_model_index[model_name]]);
+//          vector<Sample> templates (temp.begin(),temp.begin() + 301);
+//          vector<Sample> synthSamples (temp.begin() + 302, temp.end());
 
         // - store realSamples to HDF5 files
         h5.write(hdf5_path + "templates_" + model_name + ".h5", templates);
@@ -337,7 +312,6 @@ void datasetManager::generateDatasets()
     training_set.clear();
     test_set.clear();
     templates.clear();
-
 
     for (string &seq : used_models)
     {
@@ -422,6 +396,7 @@ void datasetManager::generateDatasets()
     nr_test_poses = test_set[0].size();
 
     computeQuaternions();
+    fillVertexTmpl();
 }
 
 void datasetManager::computeQuaternions()
@@ -464,6 +439,16 @@ void datasetManager::addNoiseToSynthData(unsigned int copies, vector<vector<Samp
             }
         }
     }
-
 }
 
+void datasetManager::fillVertexTmpl()
+{
+    vertex_tmpl.assign(nr_objects, vector<int>());
+    for (size_t object = 0; object < nr_objects; ++object) {
+        for (size_t tmpl_pose = 0; tmpl_pose < nr_template_poses; ++tmpl_pose) {
+            if(templates[object][tmpl_pose].label.at<float>(0,6) == 0){
+                vertex_tmpl[object].push_back(tmpl_pose);
+            }
+        }
+    }
+}

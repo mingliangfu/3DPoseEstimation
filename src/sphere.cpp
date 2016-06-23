@@ -64,7 +64,7 @@ pair<int,int> SphereRenderer::renderView(Model &model, Isometry3f &pose, Mat &co
     return {x,y};
 }
 /***************************************************************************/
-vector<RenderView, Eigen::aligned_allocator<RenderView> > SphereRenderer::createViews(Model &model,int sphereDep,Vector3f scale, Vector3f rotation, bool skipLowerHemi, bool clip, int rotInv, int subdiv)
+vector<RenderView, Eigen::aligned_allocator<RenderView> > SphereRenderer::createViews(Model &model,int sphereDep,Vector3f scale, Vector3f rotation, bool skipLowerHemi, bool clip)
 {
     assert(m_camera(0,0)!=0);
 
@@ -74,22 +74,17 @@ vector<RenderView, Eigen::aligned_allocator<RenderView> > SphereRenderer::create
 
     vector<RenderView, Eigen::aligned_allocator<RenderView> > out;
 
-    int skipped = 0;
-
     vector<Vector3f> sphere = initSphere(sphereDep);
     for(float currsca : sca)
         for(Vector3f &pos : sphere)
         {
             if((pos(2) < 0) && skipLowerHemi) continue;  // Skip the lower hemisphere of the object
-            if((pos(0) < 0) && rotInv == 2) {skipped++; continue;} // Skip negative x-part (for symmetric objects)
-            if((pos(1) < 0 || pos(1) > 0.35/subdiv || pos(0) < 0) && rotInv == 1) {skipped++; continue;} // Store the views with fixed azimuth (y==0) (for rot. inv. objects)
-//            cout << "Pose: " << pos(0) << ", " << pos(1) << ", " << pos(2) << endl;
 
             for(float curr_rot : rots)
             {
                 RenderView view;
                 view.pose = createTransformation(pos,currsca,curr_rot);
-                pair<int,int> render = renderView(model,view.pose,view.col,view.dep, clip);
+                pair<int,int> render = renderView(model,view.pose,view.col,view.dep,clip);
                 view.x_off = render.first;
                 view.y_off = render.second;
                 out.push_back(view);
@@ -102,8 +97,6 @@ vector<RenderView, Eigen::aligned_allocator<RenderView> > SphereRenderer::create
     for(Vector3f &pos : sphere)
     {
        if((pos(2) < 0) && skipLowerHemi) continue;  // Skip the lower hemisphere of the object
-       if((pos(0) < 0) && rotInv == 2) continue; // Skip negative x-part (for symmetric objects)
-       if((pos(1) < 0 || pos(1) > 0.35/subdiv || pos(0) < 0) && rotInv == 1) continue; // Store the views with fixed azimuth (y==0) (for rot. inv. objects)
 
        float sz[3] = {pos(0), pos(2), pos(1)};
        Mat pose = Mat(1, 3, CV_32FC1, &sz);
@@ -122,15 +115,6 @@ vector<RenderView, Eigen::aligned_allocator<RenderView> > SphereRenderer::create
     visualizer.spin();
 //    visualizer.saveScreenshot("sampling.png");
 #endif
-
-    // Fill the rest of the templates
-    if(rotInv != 0) {
-        int out_size = out.size();
-        while(out.size() < (out_size + skipped*rots.size())) {
-            out.push_back(out[0]);
-        }
-    }
-
 
     /*
     for(int i=0; i< sphere.size()-1; ++i)

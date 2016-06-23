@@ -62,7 +62,6 @@ void networkEvaluator::visualizeManifold(caffe::Net<float> &CNN, const vector<ve
     // If more than 3 dims, do PCA
     if (DBfeats.cols > 3)
     {
-
         PCA pca(DBfeats, Mat(), CV_PCA_DATA_AS_ROW);
         Mat proj = pca.project(DBfeats);
         proj(Rect(0,0,3,proj.rows)).copyTo(DBfeats);

@@ -1,8 +1,9 @@
 #include "networksolver.h"
 
 networkSolver::networkSolver(string config, datasetManager* db): db(db), templates(db->getTemplateSet()), training_set(db->getTrainingSet()),
-                                                                 test_set(db->getTemplateSet()), tmpl_quats(db->getTmplQuats()),
-                                                                 training_quats(db->getTrainingQuats()), test_quats(db->getTestQuats())
+                                                                 test_set(db->getTestSet()), tmpl_quats(db->getTmplQuats()),
+                                                                 training_quats(db->getTrainingQuats()), test_quats(db->getTestQuats()),
+                                                                 vertex_tmpl(db->getVertexTmpl())
 {
     // Read config parameters
     readParam(config);
@@ -44,9 +45,32 @@ vector<Sample> networkSolver::buildBatch(int batch_size, int iter, bool bootstra
                 triplet.pusher1 = templates[knn_object][knn_pose];
             } else {
                 // - random template of the same class
-                pusher1 = ran_tpl(ran);
-                while (pusher1 == puller && pusher1 == pusher0) pusher1 = ran_tpl(ran);
-                triplet.pusher1 = templates[object][pusher1];
+                // -- if model is rotInv or symmetric
+                if (rotInv[global_model_index[used_models[object]]] != 0)
+                {
+                    // -- randomize until elevation levels of the puller and pusher 1 are different
+                    pusher1 = ran_tpl(ran);
+                    while(acos(tmpl_quats[object][pusher1].toRotationMatrix()(2,2)) - acos(tmpl_quats[object][puller].toRotationMatrix()(2,2)) < 0.2)
+                        pusher1 = ran_tpl(ran);
+                    if (inplane) {
+                        triplet.pusher1 = templates[object][pusher1];
+                    } else {
+                        triplet.pusher1 = templates[object][vertex_tmpl[object][getTmplVertex(object,pusher1)]];
+                    }
+
+                // -- if model is normal
+                } else {
+                    pusher1 = ran_tpl(ran);
+                    if (inplane) {
+                       while(pusher1 == puller && pusher1 == pusher0) pusher1 = ran_tpl(ran);
+                       triplet.pusher1 = templates[object][pusher1];
+                    } else {
+                        while(getTmplVertex(object, pusher1) == getTmplVertex(object, puller)
+                              && getTmplVertex(object, pusher1) == getTmplVertex(object, pusher0))
+                            pusher1 = ran_tpl(ran);
+                        triplet.pusher1 = templates[object][getTmplVertex(object, pusher1)];
+                    }
+                }
             }
 
             // Pusher 2: fill either with the missclassified knn or random template of a different class
@@ -57,21 +81,52 @@ vector<Sample> networkSolver::buildBatch(int batch_size, int iter, bool bootstra
                 triplet.pusher2 = templates[knn_object][knn_pose];
             } else {
                 // - template from another object
-                pusher2 = ran_obj(ran);
+                pusher2 = ran_obj(ran);  
                 while (pusher2 == object) pusher2 = ran_obj(ran);
-                triplet.pusher2 = templates[pusher2][ran_tpl(ran)];
+
+                if (inplane) {
+                    triplet.pusher2 = templates[pusher2][ran_tpl(ran)];
+                } else {
+                    triplet.pusher2 = templates[pusher2][vertex_tmpl[object][getTmplVertex(object,ran_tpl(ran))]];
+                }
             }
         } else {
+            // Pusher 1: random template of the same class
+            // - if model is rotInv or symmetric
+            if (rotInv[global_model_index[used_models[object]]] != 0)
+            {
+                // -- randomize until elevation levels of the puller and pusher 1 are different
+                pusher1 = ran_tpl(ran);
+                while(acos(tmpl_quats[object][pusher1].toRotationMatrix()(2,2)) - acos(tmpl_quats[object][puller].toRotationMatrix()(2,2)) < 0.2)
+                    pusher1 = ran_tpl(ran);
+                if (inplane) {
+                    triplet.pusher1 = templates[object][pusher1];
+                } else {
+                    triplet.pusher1 = templates[object][vertex_tmpl[object][getTmplVertex(object,pusher1)]];
+                }
 
-            // Find pusher1: random template
-            pusher1 = ran_tpl(ran);
-            while (pusher1 == puller && pusher1 == pusher0) pusher1 = ran_tpl(ran);
-            triplet.pusher1 = templates[object][pusher1];
+            // - if model is normal
+            } else {
+                pusher1 = ran_tpl(ran);
+                if (inplane) {
+                   while(pusher1 == puller && pusher1 == pusher0) pusher1 = ran_tpl(ran);
+                   triplet.pusher1 = templates[object][pusher1];
+                } else {
+                    while(getTmplVertex(object, pusher1) == getTmplVertex(object, puller)
+                          && getTmplVertex(object, pusher1) == getTmplVertex(object, pusher0))
+                        pusher1 = ran_tpl(ran);
+                    triplet.pusher1 = templates[object][getTmplVertex(object, pusher1)];
+                }
+            }
 
-            // Find pusher2: template from another object
+            // Pusher 2: random template of a different class
             pusher2 = ran_obj(ran);
             while (pusher2 == object) pusher2 = ran_obj(ran);
-            triplet.pusher2 = templates[pusher2][ran_tpl(ran)];
+            if (inplane) {
+                triplet.pusher2 = templates[pusher2][ran_tpl(ran)];
+            } else {
+                triplet.pusher2 = templates[pusher2][vertex_tmpl[object][getTmplVertex(object,ran_tpl(ran))]];
+            }
         }
 
 #if 0   // Show triplets
@@ -313,9 +368,12 @@ void networkSolver::readParam(string config)
     gamma = pt.get<float>("train.gamma");
     gpu = pt.get<bool>("train.gpu");
     binarization = pt.get<bool>("train.binarization");
+    rotInv = to_array<int>(pt.get<string>("input.rotInv"));
+    inplane = pt.get<bool>("input.inplane");
 
     if (gpu) caffe::Caffe::set_mode(caffe::Caffe::GPU);
     used_models = to_array<string>(pt.get<string>("input.used_models"));
+    models = to_array<string>(pt.get<string>("input.models"));
 
     // Save dataset parameters
     nr_objects = used_models.size();
@@ -325,6 +383,8 @@ void networkSolver::readParam(string config)
 
     // For each object build a mapping from model name to index number
     for (size_t i = 0; i < nr_objects; ++i) model_index[used_models[i]] = i;
+    // Global mapping
+    for (size_t i = 0; i < models.size(); ++i) global_model_index[models[i]] = i;
 
 }
 
@@ -340,7 +400,7 @@ void networkSolver::computeMaxSimTmpl()
             float best_dist2 = numeric_limits<float>::max(); // second best
             int sim_tmpl, sim_tmpl2;
 
-            // - push back the first most similar template
+            // - find the first most similar template
             for (size_t tmpl_pose = 0; tmpl_pose < nr_template_poses; tmpl_pose++)
             {
                 float temp_dist = training_quats[object][training_pose].angularDistance(tmpl_quats[object][tmpl_pose]);
@@ -348,21 +408,35 @@ void networkSolver::computeMaxSimTmpl()
                 best_dist = temp_dist;
                 sim_tmpl = tmpl_pose;
             }
-            maxSimTmpl[object][training_pose].push_back(sim_tmpl);
 
-            // - push back the second most similar template
+            // - push back the template
+            if (inplane) {
+                maxSimTmpl[object][training_pose].push_back(sim_tmpl);
+            } else {
+                maxSimTmpl[object][training_pose].push_back(vertex_tmpl[object][getTmplVertex(object,sim_tmpl)]);
+            }
+
+            // - find the second most similar template
             for (size_t tmpl_pose = 0; tmpl_pose < nr_template_poses; tmpl_pose++)
             {
                 float temp_dist = training_quats[object][training_pose].angularDistance(tmpl_quats[object][tmpl_pose]);
+                if (!inplane && getTmplVertex(object,tmpl_pose) == getTmplVertex(object,sim_tmpl)) continue;
                 if (temp_dist >= best_dist2 || temp_dist == best_dist) continue;
                 best_dist2 = temp_dist;
                 sim_tmpl2 = tmpl_pose;
             }
-            maxSimTmpl[object][training_pose].push_back(sim_tmpl2);
+
+            // - push back the template
+            if (inplane) {
+                maxSimTmpl[object][training_pose].push_back(sim_tmpl2);
+            } else {
+                maxSimTmpl[object][training_pose].push_back(vertex_tmpl[object][getTmplVertex(object,sim_tmpl2)]);
+            }
+
 #if 0
-            imshow("training sample",showRGBDPatch(training_set[object][training_pose].data,false));
-            imshow("similar template 1",showRGBDPatch(templates[object][sim_tmpl].data,false));
-            imshow("similar template 2",showRGBDPatch(templates[object][sim_tmpl2].data,false));
+            imshow("query",showRGBDPatch(training_set[object][training_pose].data,false));
+            imshow("sim 1",showRGBDPatch(templates[object][maxSimTmpl[object][training_pose][0]].data,false));
+            imshow("sim 2",showRGBDPatch(templates[object][maxSimTmpl[object][training_pose][1]].data,false));
             waitKey();
 #endif
         }

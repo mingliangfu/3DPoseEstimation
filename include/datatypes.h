@@ -2,7 +2,6 @@
 #define DATATYPES_H
 
 #include <Eigen/Geometry>
-#include <Eigen/StdVector>
 
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
