@@ -105,7 +105,7 @@ void ICP::setData(Model &model)
     int skippedFaces=0;
     if(!model.getFaces().empty())
     {
-        for(Vector3i &f : model.getFaces())
+        for(Vec3i &f : model.getFaces())
         {
 
             Vector3f normal = (model.getPoints()[f(1)]-model.getPoints()[f(0)]).cross(model.getPoints()[f(2)]-model.getPoints()[f(0)]);

@@ -44,7 +44,7 @@ public:
     void computeQuaternions();
     void fillVertexTmpl();
     void addNoiseToSynthData(unsigned int copies, vector<vector<Sample>>& trainingSet);
-
+    void randomColorFill(Mat &patch);
     const vector<vector<Sample>>& getTrainingSet() const {return training_set;}
     const vector<vector<Sample>>& getTemplateSet() const {return templates;}
     const vector<vector<Sample>>& getTestSet() const {return training_set;}

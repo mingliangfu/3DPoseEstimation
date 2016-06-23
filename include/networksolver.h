@@ -31,11 +31,12 @@ public:
     networkSolver(string config, datasetManager *db);
     vector<Sample> buildBatch(int batch_size, int iter, bool bootstrapping);
     void trainNet(int resume_iter=0);
+    void binarizeNet(int resume_iter=0);
+
     void computeKNN(caffe::Net<float> &CNN);
     void visualizeKNN(caffe::Net<float> &CNN, vector<string> test_models);
     bool bootstrap(caffe::Net<float> &CNN, int iter);
 
-private:
     void readParam(string config);
     void computeMaxSimTmpl();
     int getTmplVertex(int object, int pose){return templates[object][pose].label.at<float>(0,5);}
@@ -56,9 +57,9 @@ private:
 
     // Config parameters
     vector<string> used_models, models;
-    unsigned int num_epochs, num_training_rounds;
+    unsigned int num_epochs, num_training_rounds, binarization_epochs;
     unsigned int step_size;
-    string network_path, net_name, learning_policy;
+    string network_path, net_name, learning_policy, binarization_net_name;
     float learning_rate, momentum, weight_decay, gamma;
     bool gpu, binarization, inplane;
 };

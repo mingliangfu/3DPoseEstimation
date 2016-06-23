@@ -224,6 +224,73 @@ void networkSolver::trainNet(int resume_iter)
     clog << "Training finished!" << endl;
 }
 
+
+void networkSolver::binarizeNet(int resume_iter)
+{
+    // Set network parameters
+    caffe::SolverParameter solver_param;
+    solver_param.set_base_lr(learning_rate);
+    solver_param.set_momentum(momentum);
+    solver_param.set_weight_decay(weight_decay);
+    solver_param.set_solver_type(caffe::SolverParameter_SolverType_SGD);
+    solver_param.set_lr_policy(learning_policy);
+    solver_param.set_stepsize(step_size);
+    solver_param.set_gamma(gamma);
+    solver_param.set_snapshot_prefix(binarization_net_name);
+    solver_param.set_display(1);
+    solver_param.set_net(network_path + binarization_net_name + ".prototxt");
+    caffe::SGDSolver<float> solver(solver_param);
+
+
+
+    if (resume_iter > 0) {
+        string resume_file = net_name + "_iter_" + to_string(resume_iter) + ".caffemodel";
+        solver.net()->CopyTrainedLayersFrom(resume_file.c_str());
+    }
+
+    // Get network information
+    boost::shared_ptr<caffe::Net<float> > net = solver.net();
+    caffe::Blob<float>* input_data_layer = net->input_blobs()[0];
+    const size_t batch_size = input_data_layer->num();
+    const int channels =  input_data_layer->channels();
+    const int targetSize = input_data_layer->height();
+    const int slice = input_data_layer->height()*input_data_layer->width();
+    const int img_size = slice*channels;
+    vector<float> data(batch_size*img_size,0);
+
+    vector<Sample> batch;
+    unsigned int triplet_size = 5;
+    unsigned int epoch_iter = nr_objects * nr_training_poses / (batch_size/triplet_size);
+
+    // Compute MaxSimTmpls to build batches
+    computeMaxSimTmpl();
+
+    // Perform training
+    for (size_t epoch = 0; epoch < binarization_epochs; epoch++)
+    {
+        for (size_t iter = 0; iter < epoch_iter; iter++)
+        {
+            // Fill current batch
+            batch = buildBatch(batch_size, iter, false);
+
+            // Fill linear batch memory with input data in Caffe layout with channel-first and set as network input
+            for (size_t i=0; i < batch.size(); ++i)
+            {
+                int currImg = i*img_size;
+                for (int ch = 0; ch < channels ; ++ch)
+                    for (int y = 0; y < targetSize; ++y)
+                        for (int x = 0; x < targetSize; ++x)
+                            data[currImg + slice*ch + y*targetSize + x] = batch[i].data.ptr<float>(y)[x*channels + ch];
+            }
+            input_data_layer->set_cpu_data(data.data());
+            solver.Step(1);
+        }
+    }
+
+    solver.Snapshot();
+    clog << "Binarization training finished!" << endl;
+}
+
 bool networkSolver::bootstrap(caffe::Net<float> &CNN, int iter)
 {
     clog << "Bootstrapping: " << endl;
@@ -367,7 +434,10 @@ void networkSolver::readParam(string config)
     step_size = pt.get<unsigned int>("train.step_size");
     gamma = pt.get<float>("train.gamma");
     gpu = pt.get<bool>("train.gpu");
+
     binarization = pt.get<bool>("train.binarization");
+    binarization_epochs = pt.get<int>("train.binarization_epochs");
+    binarization_net_name = pt.get<string>("train.binarization_net_name");
     rotInv = to_array<int>(pt.get<string>("input.rotInv"));
     inplane = pt.get<bool>("input.inplane");
 

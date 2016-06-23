@@ -10,6 +10,8 @@
 #include <opencv2/viz.hpp>
 #include <opencv2/features2d.hpp>
 
+#include <tbb/tbb.h>
+
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 
@@ -21,7 +23,10 @@
 #include "include/model.h"
 #include "include/hdf5handler.h"
 #include "include/datasetmanager.h"
+#include "include/networkevaluator.h"
 #include "include/networksolver.h"
+#include "include/utilities.h"
+#include "include/icp.h"
 
 using namespace std;
 using namespace cv;
@@ -31,18 +36,9 @@ using namespace boost;
 
 #define SQR(x) ((x)*(x))
 
-struct config
-{
-    // Define paths to the data
-    string linemod_path,hdf5_path,network_path;
-    bool GPU = false;
-} CONFIG;
-
-
-
 Matrix3f cam;
 hdf5Handler h5;
-
+std::default_random_engine rand_eng;
 
 
 float linemod_error(Isometry3f &gt, Isometry3f &pose, Model &m, string name)
@@ -62,15 +58,13 @@ float linemod_error(Isometry3f &gt, Isometry3f &pose, Model &m, string name)
 
 
 
-
 map<string,float> diameters,hashmod_hues;
 
 
-
-void loadParams()
+void loadParams(string linemod_path)
 {
-    assert(filesystem::exists(CONFIG.linemod_path+"diameters.txt"));
-    ifstream dia(CONFIG.linemod_path+"diameters.txt");
+    assert(filesystem::exists(linemod_path+"diameters.txt"));
+    ifstream dia(linemod_path+"diameters.txt");
     for (int i=0; i < 15; i++)
     {
         pair<string,float> temp;
@@ -82,21 +76,8 @@ void loadParams()
 }
 
 
-Mat showRGBDPatch(Mat &patch, bool show=true)
-{
-    vector<Mat> channels;
-    cv::split(patch,channels);
-    Mat RGB,D,out(patch.rows,patch.cols*2,CV_32FC3);
-    cv::merge(vector<Mat>({channels[0],channels[1],channels[2]}),RGB);
-    RGB.copyTo(out(Rect(0,0,patch.cols,patch.rows)));
-    cv::merge(vector<Mat>({channels[3],channels[3],channels[3]}),D);
-    D.copyTo(out(Rect(patch.cols,0,patch.cols,patch.rows)));
-    if (show){imshow("R G B D", out); waitKey();}
-    return out;
-}
-
 // Takes a color and depth frame and samples a normalized 4-channel patch at the given center position and z-scale
-Mat samplePatchWithScale(Mat &color, Mat &depth, int center_x, int center_y, float z, float fx, float fy)
+Mat samplePatchWithScale(Mat &color, Mat &depth, Mat &normals, int center_x, int center_y, float z, float fx, float fy)
 {
     // Make a cut of metric size m
     float m = 0.2f;
@@ -113,39 +94,46 @@ Mat samplePatchWithScale(Mat &color, Mat &depth, int center_x, int center_y, flo
     assert (cut.x >= 0 && cut.x < color.cols-screenW);
     assert (cut.y >= 0 && cut.y < color.rows-screenH);
 
+
     // Cut-out from whole image
-    Mat temp_col, temp_dep, final;
+    Mat temp_col, temp_dep, temp_nor, temp, final;
     color(cut).copyTo(temp_col);
     depth(cut).copyTo(temp_dep);
+    normals(cut).copyTo(temp_nor);
 
-    Mat bg = (temp_dep == 0);
-
-    // Convert to float and rescale to [-1,1]
+    // Convert to float
     temp_col.convertTo(temp_col,CV_32FC3,1/255.f);
-    temp_col = (temp_col-0.5f)*2.f;
 
-    // Demean with central z value, clamp and rescale to [-1,1]
+    // Demean with central z value, clamp and rescale to [0,1]
     temp_dep -= z;
     temp_dep.setTo(-m, temp_dep < -m);
     temp_dep.setTo(m, temp_dep > m);
     temp_dep *= 1.0f / m;
+    temp_dep = (temp_dep+1.f)*0.5f;
 
     // Resize
     const int CNN_INPUT_SIZE = 64;
     const Size final_size(CNN_INPUT_SIZE,CNN_INPUT_SIZE);
     resize(temp_col,temp_col,final_size);   // Standard bilinear interpolation
+    resize(temp_nor,temp_nor,final_size);   // Standard bilinear interpolation
     resize(temp_dep,temp_dep,final_size,0,0,INTER_NEAREST);// Nearest-neighbor interpolation for depth!!!
 
-    cv::merge(vector<Mat>{temp_col,temp_dep},final);
+    cv::merge(vector<Mat>{temp_col,temp_dep,temp_nor},final);
 
-    // Bring all back to [0,1]
-    final = (final+1.f)*0.5f;
+
 
     return final;
 }
 
 
 
+struct View
+{
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+    Quaternionf rot;
+    vector<Point> points;
+    vector<float> depths;
+};
 
 struct Hypo
 {
@@ -153,13 +141,16 @@ struct Hypo
     Isometry3f pose;
     Mat col, dep, nor;
     pair<int,int> offset;
-    int r, c;
-    float screenW;
-    //IcpStruct icp;
-    float color_sim, depth_sim, nor_sim, linemod_error;
-    int NNIdx;
+    vector<Point> points;
+    vector<Vector3f, Eigen::aligned_allocator<Vector3f> > cloud_pts;
+    View *NN;
+    IcpStruct icp_ret;
+    Point pos2D;
+    float depth_sim;
+    int NNIdx, sampleIdx;
     float distance;
-    Hypo() : depth_sim(0), linemod_error(1000){}
+    bool killed;
+    Hypo() : depth_sim(0), killed(false), pose(Isometry3f::Identity()){}
 };
 
 
@@ -172,14 +163,26 @@ struct SceneSample
     Mat patch, feat;
 };
 
-vector<SceneSample, Eigen::aligned_allocator<SceneSample> > sampleScene(Mat &col, Mat &dep, int step_size)
+vector<SceneSample, Eigen::aligned_allocator<SceneSample> > sampleScene(Mat &col, Mat &dep, Mat &nor, int step_size)
 {
     int y_samples = (dep.rows / step_size)-1;
     int x_samples = (dep.cols / step_size)-1;
 
+#if 0
+    Mat temp;
+    f.color.copyTo(temp);
+    for (SceneSample &s : scene_samples)
+    {
+        if (s.patch.empty()) cv::circle(temp,s.pos2D,2,Scalar(0,0,255));
+        else cv::circle(temp,s.pos2D,2,Scalar(0,255,0));
+    }
+    imshow("samples",temp); waitKey();
+#endif
+
+
     // Collect samples
     vector<SceneSample, Eigen::aligned_allocator<SceneSample> > out;
-    const int border = 3;
+    const int border = 10;
     for (int y=border; y <= y_samples-border; y++)
         for (int x=border; x <= x_samples-border; x++)
         {
@@ -188,7 +191,8 @@ vector<SceneSample, Eigen::aligned_allocator<SceneSample> > sampleScene(Mat &col
             float d = dep.at<float>(gy,gx);
             if (d==0) continue;
             SceneSample s;
-            s.patch = samplePatchWithScale(col,dep,gx,gy,d,cam(0,0),cam(1,1));
+            s.patch = samplePatchWithScale(col,dep,nor,gx,gy,d,cam(0,0),cam(1,1));
+            if (s.patch.empty()) continue;
             s.pos2D.x = gx;
             s.pos2D.y = gy;
             out.push_back(s);
@@ -196,20 +200,17 @@ vector<SceneSample, Eigen::aligned_allocator<SceneSample> > sampleScene(Mat &col
     return out;
 }
 
-Mat binarizeDescriptors(Mat &descs)
+void binarizeDescriptors(Mat &descs)
 {
-
-    Mat binDescs = Mat::zeros(descs.size(),CV_32F);
+    Mat binDescs = Mat::zeros(descs.rows,descs.cols/8,CV_8U);
     for (int r=0; r < descs.rows; ++r)
         for (int b=0; b < descs.cols; ++b)
         {
-            //int curr_byte = b/8;
-            //int curr_bit = b - (curr_byte*8);
-            //binDescs.at<uchar>(r,curr_byte) |= (descs.at<float>(r,b) >= 0) << curr_bit;
-            binDescs.at<float>(r,b) = descs.at<float>(r,b) >= 0 ? 1 : 0;
-
+            int curr_byte = b/8;
+            int curr_bit = b - (curr_byte*8);
+            binDescs.at<uchar>(r,curr_byte) |= (descs.at<float>(r,b) >= 0) << curr_bit;
         }
-    return binDescs;
+    binDescs.copyTo(descs);
 }
 
 vector<Sample> extractSceneSamples(vector<Frame,Eigen::aligned_allocator<Frame>> &frames, Matrix3f &cam, int index)
@@ -225,8 +226,10 @@ vector<Sample> extractSceneSamples(vector<Frame,Eigen::aligned_allocator<Frame>>
         float z = f.depth.at<float>(projCentroid(1),projCentroid(0));
         assert(z>0.0f);
 
+        depth2normals(f.depth,f.normals,cam);
+
         Sample s;
-        s.data = samplePatchWithScale(f.color,f.depth,projCentroid(0),projCentroid(1),z,cam(0,0),cam(1,1));
+        s.data = samplePatchWithScale(f.color,f.depth,f.normals, projCentroid(0),projCentroid(1),z,cam(0,0),cam(1,1));
 
         // Build 5-dimensional label: model index + quaternion
         s.label = Mat(1,5,CV_32F);
@@ -240,6 +243,61 @@ vector<Sample> extractSceneSamples(vector<Frame,Eigen::aligned_allocator<Frame>>
     return samples;
 }
 
+
+
+
+map<int, vector<View, Eigen::aligned_allocator<View> > > tpl_views;
+
+void createTemplatePoints(Model &model,Matrix3f &cam)
+{
+
+    // Create synthetic views
+    SphereRenderer sphere(cam);
+    Vector3f scales(0.6, 0.1, 1.11);     // Render from 0.4 meters
+    Vector3f in_plane_rots(-45,15,45);  // Render in_plane_rotations from -45 degree to 45 degree in 15degree steps
+    vector<RenderView, Eigen::aligned_allocator<RenderView> > views =
+            sphere.createViews(model,2,scales,in_plane_rots,true,false,false);    // Equidistant sphere sampling with recursive level subdiv
+
+    for (RenderView &v : views)
+    {
+        int scale = (v.pose.translation()(2)+0.05f)*10;
+        View view;
+        Mat fg = v.dep > 0;
+        float inc = cv::countNonZero(fg)/1000.f;
+        for (float x=0; x < v.dep.cols; x += inc)
+            for (float y=0; y < v.dep.rows; y += inc)
+                if(fg.at<uchar>(y,x))
+                {
+                    view.depths.push_back(v.dep.at<float>(y,x));
+                    view.points.push_back(Point(x-cam(0,2),y - cam(1,2)));
+                }
+        view.rot = Quaternionf(v.pose.linear());
+        tpl_views[scale].push_back(view);
+    }
+
+    cerr << "Scales: " << endl;
+    for (auto &k : tpl_views) cerr << k.first << endl;
+
+}
+
+void randomColorFill(Mat &patch)
+{
+    int chans = patch.channels();
+    bool nors = patch.channels() == 7;
+    std::uniform_real_distribution<float> p(0.f,1.f);
+    std::uniform_real_distribution<float> p_nor(-1.f,1.f);
+    for (int r=0; r < patch.rows; ++r)
+        for (int c=0; c < patch.cols; ++c)
+        {
+            float *row = patch.ptr<float>(r);
+            if (row[c*chans + 3] > 0) continue;
+            for (int ch=0; ch < 3; ++ch)
+                row[c*chans + ch] =  p(rand_eng);
+            if (nors)
+                for (int ch=4; ch < 7; ++ch)
+                    row[c*chans + ch] =  p_nor(rand_eng);
+        }
+}
 
 vector<Sample> createTemplates(Model &model,Matrix3f &cam, int index, int subdiv)
 {
@@ -257,16 +315,22 @@ vector<Sample> createTemplates(Model &model,Matrix3f &cam, int index, int subdiv
         // Instead of taking object centroid, take the surface point as central sample point
         float z = v.dep.at<float>(cam(1,2),cam(0,2));
         assert(z>0.0f);
+        //z = v.pose.translation()(2);
+
+        Mat normals;
+        depth2normals(v.dep,normals,cam);
 
         Sample sample;
-        sample.data = samplePatchWithScale(v.col,v.dep,cam(0,2),cam(1,2),z,cam(0,0),cam(1,1));
+        sample.data = samplePatchWithScale(v.col,v.dep,normals,cam(0,2),cam(1,2),z,cam(0,0),cam(1,1));
+        randomColorFill(sample.data);
 
-        // Build 5-dimensional label: model index + quaternion
-        sample.label = Mat(1,5,CV_32F);
+        // Build 6-dimensional label: model index + quaternion + z-offset
+        sample.label = Mat(1,6,CV_32F);
         sample.label.at<float>(0,0) = index;
         Quaternionf q(v.pose.linear());
         for (int i=0; i < 4; ++i)
             sample.label.at<float>(0,1+i) = q.coeffs()(i);
+        sample.label.at<float>(0,5) = v.pose.translation()(2)-z;
 
         samples.push_back(sample);
     }
@@ -274,79 +338,6 @@ vector<Sample> createTemplates(Model &model,Matrix3f &cam, int index, int subdiv
 
 }
 
-
-
-vector<Mat> computeDescriptors(caffe::Net<float> &CNN, vector<Sample> samples)
-{
-
-    caffe::Blob<float>* input_layer = CNN.input_blobs()[0];
-    const size_t batchSize = input_layer->num();
-    const int channels =  input_layer->channels();
-    const int targetSize = input_layer->height();
-    const int slice = input_layer->height()*input_layer->width();
-    const int img_size = slice*channels;
-
-    caffe::Blob<float>* output_layer = CNN.output_blobs()[0];
-    const size_t desc_dim = output_layer->channels();
-
-    vector<float> data(batchSize*img_size,0);
-    vector<int> currIdxs;
-    vector<Mat> descs(samples.size());
-
-    currIdxs.reserve(batchSize);
-    for (size_t i=0; i < samples.size(); ++i)
-    {
-        // Collect indices of samples to be processed for this batch
-        if (samples[i].data.empty()) continue;
-        currIdxs.push_back(i);
-        if (currIdxs.size() == batchSize || i == samples.size()-1) // If batch full or last sample
-        {
-            // Fill linear batch memory with input data in Caffe layout with channel-first
-            for (size_t j=0; j < currIdxs.size(); ++j)
-            {
-                Mat &patch = samples[currIdxs[j]].data;
-                int currImg = j*img_size;
-                for (int ch=0; ch < channels ; ++ch)
-                    for (int y = 0; y < targetSize; ++y)
-                        for (int x = 0; x < targetSize; ++x)
-                            data[currImg + slice*ch + y*targetSize + x] = patch.ptr<float>(y)[x*channels + ch];
-            }
-            // Copy data memory into Caffe input layer, process batch and copy result back
-            input_layer->set_cpu_data(data.data());
-            vector< caffe::Blob<float>* > out = CNN.Forward();
-
-            for (size_t j=0; j < currIdxs.size(); ++j)
-            {
-                descs[currIdxs[j]] = Mat(1,desc_dim,CV_32F);
-                memcpy(descs[currIdxs[j]].data, out[0]->cpu_data() + j*desc_dim, desc_dim*sizeof(float));
-            }
-
-            currIdxs.clear(); // Throw away current batch
-        }
-    }
-    return descs;
-}
-
-
-
-void read_config_file(char *file)
-{
-
-    namespace po = boost::program_options;
-
-    // Define variables
-    po::options_description desc("Options");
-    desc.add_options()("linemod_path", po::value<std::string>(&CONFIG.linemod_path), "Path to LineMOD dataset");
-    desc.add_options()("hdf5_path", po::value<std::string>(&CONFIG.hdf5_path), "Path to training data as HDF5");
-    desc.add_options()("network_path", po::value<std::string>(&CONFIG.network_path), "Path to networks");
-    desc.add_options()("gpu", po::value<bool>(&CONFIG.GPU), "GPU mode");
-
-    // Read config file
-    po::variables_map vm;
-    std::ifstream settings_file(file);
-    po::store(po::parse_config_file(settings_file , desc), vm);
-    po::notify(vm);
-}
 
 Benchmark loadLinemodBenchmark(string linemod_path, string sequence, int count =-1)
 {
@@ -397,24 +388,24 @@ Benchmark loadLinemodBenchmark(string linemod_path, string sequence, int count =
 }
 
 
-vector<string> models = {"ape","benchvise","cam","can","cat","driller","duck","holepuncher","iron","lamp","phone"};
 
-void createSceneSamplesAndTemplates()
+void createSceneSamplesAndTemplates(datasetManager &ds)
 {
 
-    for (int modelId = 0; modelId < models.size(); ++modelId)
+    for (size_t modelId = 0; modelId < ds.models.size(); ++modelId)
     {
 
-        string model_name = models[modelId];
+        string model_name = ds.models[modelId];
 
         clog << "\nCreating samples and patches for " << model_name << ":" << endl;
 
         // - load model
         Model model;
-        model.loadPLY(CONFIG.linemod_path + model_name + ".ply");
+        model.loadFile(ds.dataset_path + model_name + ".ply");
 
         // - load frames of benchmark and visualize
-        Benchmark bench = loadLinemodBenchmark(CONFIG.linemod_path, model_name);
+        Benchmark bench = loadLinemodBenchmark(ds.dataset_path, model_name);
+        cam = bench.cam;
 
         // === Real data ===
         // - for each scene frame, extract RGBD sample
@@ -424,7 +415,7 @@ void createSceneSamplesAndTemplates()
         random_shuffle(realSamples.begin(), realSamples.end());
 
         // - store realSamples to HDF5 files
-        h5.write(CONFIG.hdf5_path + "realSamples_" + model_name +".h5", realSamples);
+        ds.h5.write(ds.hdf5_path + "realSamples_" + model_name +".h5", realSamples);
         //for (Sample &s : realSamples) showRGBDPatch(s.data);
 
         // === Synthetic data ===
@@ -434,108 +425,283 @@ void createSceneSamplesAndTemplates()
         vector<Sample> templates = createTemplates(model,bench.cam,modelId, subdivTmpl);
         vector<Sample> synthSamples = createTemplates(model,bench.cam,modelId, subdivTmpl+1);
 
-        // - shuffle the samples
-        //random_shuffle(templates.begin(), templates.end());
-        random_shuffle(synthSamples.begin(), synthSamples.end());
-
         // - store realSamples to HDF5 files
-        h5.write(CONFIG.hdf5_path + "templates_" + model_name + ".h5", templates);
-        h5.write(CONFIG.hdf5_path + "synthSamples_" + model_name + ".h5", synthSamples);
+        ds.h5.write(ds.hdf5_path + "templates_" + model_name + ".h5", templates);
+        ds.h5.write(ds.hdf5_path + "synthSamples_" + model_name + ".h5", synthSamples);
         //for (Sample &s : templates) showRGBDPatch(s.data);
 
     }
 }
 
-/*
-// Collect pixels equidistantly with valid depth data
-samplePixels = sampleScene(color,chans[2],SAMPLE_STEP);
 
-time_sampling = watch.restart();
-
-// Sample local RGB-D patches
-color.convertTo(float_col,CV_32FC3, 1/255.f);
-samplePoints.clear();
-samplePatches.clear();
-for (Point &point : samplePixels)
+void renderExtract(vector<Hypo, Eigen::aligned_allocator<Hypo> > &hypos, Mat &cloud, SphereRenderer &renderer,Model &m)
 {
-    Mat patch = samplePatchWithScale(float_col,chans[2],point);
-    if (patch.empty()) continue;
-    samplePatches.push_back(patch);
-    samplePoints.push_back(cloud.at<Vector3f>(point));
+    for (Hypo &h : hypos) h.offset = renderer.renderView(m,h.pose,h.col,h.dep);
+    tbb::parallel_for<size_t>(0, hypos.size(), [&] (size_t i)
+    {
+        Hypo &h = hypos[i];
+        h.points.clear();
+        for (int r=0; r < h.dep.rows;++r)
+            for (int c=0; c < h.dep.cols;++c)
+                if (h.dep.at<float>(r,c))
+                {
+                    Point p(c+h.offset.first,r+h.offset.second);
+                    if((p.x <0) || (p.y <0) || (p.x > cloud.cols-1) || (p.y > cloud.rows-1)) continue;
+                    h.points.push_back(p);
+                }
+
+        h.cloud_pts.clear();
+        for (Point &p : h.points) h.cloud_pts.push_back(cloud.at<Vector3f>(p));
+    });
 }
 
-// Compute their CNN features
-sampleFeats = runNet(samplePatches);
 
-//recons = runNetReconstructions(samplePatches);
-//for(size_t i=0; i<recons.size(); ++i)
-//{
-//    string dim = to_string(sampleFeats[0].cols);
-//    imwrite("patch"+to_string(i)+".png",255*showRGBDPatch(samplePatches[i],false));
-//    imwrite(dim+"/recon"+to_string(i)+".png",255*showRGBDPatch(recons[i],false));
-//}
-
-time_feats = watch.restart();
-
-
-// Discard old probability maps
-for (auto &m : probMaps) m.second.release();
-vector<Vote6D, Eigen::aligned_allocator<Vote6D>> final_votes;
-*/
 
 int main(int argc, char *argv[])
 {
 
-    if (argc<2)
+    Model m;
+    m.loadFile("optimized_tsdf_texture_mapped_mesh.obj");
+
+
+    if (!m.m_texture.empty())
     {
-        cerr << "Specifiy config file as argument" << endl;
-        return 0;
+        imshow("tex",m.m_texture);
+        for (Vec2f t : m.m_tcoords) cerr << t << endl;
+        waitKey();
     }
-    read_config_file(argv[1]);
 
-    //createSceneSamplesAndTemplates();
+    string config_file = "manifold_rgbnor_16.ini";
 
+    datasetManager dm("configs/" + config_file);
+    dm.generateDatasets();
+    networkSolver solver("configs/" + config_file,&dm);
 
-    if (CONFIG.GPU)  caffe::Caffe::set_mode(caffe::Caffe::GPU);
-
-    string net_name = "manifold_wang_16";
-    datasetManager manager(CONFIG.linemod_path,CONFIG.hdf5_path);
-    networkSolver solver(models,CONFIG.network_path,CONFIG.hdf5_path,manager);
+    //createSceneSamplesAndTemplates(dm);
 
 
-    //solver.trainNet(net_name,0);
+    loadParams(dm.dataset_path);
+
+    bool binary = solver.binarization;
+
+#if 0
+    if (binary) solver.binarizeNet(33000);
+    else solver.trainNet(0);
+#endif
 
 
+    caffe::Net<float> *net;
+    if (binary)
+    {
+        net = new caffe::Net<float>(solver.network_path + solver.binarization_net_name + ".prototxt",caffe::TEST);
+        net->CopyTrainedLayersFrom(solver.binarization_net_name + "_iter_" + to_string(5500) + ".caffemodel");
+    }
+    else
+    {
+        net = new caffe::Net<float>(solver.network_path + solver.net_name + ".prototxt",caffe::TEST);
+        net->CopyTrainedLayersFrom(solver.net_name + "_iter_" + to_string(33000) + ".caffemodel");
+    }
+    string seq = "can";
 
-    caffe::Net<float> net(CONFIG.network_path + net_name + ".prototxt",caffe::TEST);
-    //net.CopyTrainedLayersFrom(CONFIG.network_path + net_name + "_iter_" + to_string(0) + ".caffemodel");
+    Model model;
+    model.loadFile(dm.dataset_path + seq + ".ply");
+    ICP icp;
+    bool icp_dump = icp.load3DTransform(seq+".icp");
+    icp.setData(model);
+    if (!icp_dump) icp.dump3DTransform(seq+".icp");
 
-    string seq = "iron";
 
-    Benchmark bench = loadLinemodBenchmark(CONFIG.linemod_path,seq,10);
-    vector<Sample> tpls =  h5.read(CONFIG.hdf5_path + "templates_" + seq + ".h5");
+    Benchmark bench = loadLinemodBenchmark(dm.dataset_path,seq);
+    cam = bench.cam;
 
-    Mat DB = solver.computeDescriptors(net,tpls);
-    cv::Ptr<DescriptorMatcher> matcher = DescriptorMatcher::create("FlannBased");
+    vector<Sample> tpls = createTemplates(model,cam,0,2);
+
+
+    Mat DB = networkEvaluator::computeDescriptors(*net,tpls);
+    if (binary) binarizeDescriptors(DB);
+
+    cv::Ptr<DescriptorMatcher> matcher;
+    if (binary) matcher = DescriptorMatcher::create("BruteForce-Hamming");
+    else matcher = DescriptorMatcher::create("BruteForce");
     matcher->add(DB);
 
-    cam = bench.cam;
+
+    map<string, float> rgbdnor_thresholds = {
+        {"iron",0.5f},
+        {"benchvise",0.65f}
+    };
+
+    map<string, float> rgbdnor_bin_thresholds = {
+        {"cat",45}
+        };
+
+    float thresh = rgbdnor_bin_thresholds[seq];
+    SphereRenderer renderer(cam);
+
+    createTemplatePoints(model,cam);
+
+    float best_thresh = 0.f;
+    float hit_count = 0;
+    float correct_count = 0;
     for (Frame &f :  bench.frames)
     {
 
-        vector<SceneSample, Eigen::aligned_allocator<SceneSample> > scene_samples = sampleScene(f.color,f.depth,8);
+        depth2cloud(f.depth,f.cloud,cam);
+        depth2normals(f.depth,f.normals,cam);
 
+        cerr << "Frame " << to_string(f.nr) << ": ";
 
-        Mat temp;
-        f.color.copyTo(temp);
-        for (SceneSample &s : scene_samples)
+        vector<SceneSample, Eigen::aligned_allocator<SceneSample> > scene_samples = sampleScene(f.color,f.depth,f.normals,8);
+
+        vector<Sample> patches;
+        for (auto &s : scene_samples) {Sample tmp; tmp.data = s.patch; patches.push_back(tmp);};
+
+        Mat queries = networkEvaluator::computeDescriptors(*net,patches);
+        if (binary) binarizeDescriptors(queries);
+
+        vector< vector<DMatch> > matches;
+        int knn = 1;
+        matcher->knnMatch(queries, matches, knn);
+
+        vector<Hypo, Eigen::aligned_allocator<Hypo> > hypos;
+        for (size_t sample=0; sample < scene_samples.size(); sample++)
         {
-            if (s.patch.empty()) cv::circle(temp,s.pos2D,2,Scalar(0,0,255));
-            else cv::circle(temp,s.pos2D,2,Scalar(0,255,0));
+            for (DMatch &m : matches[sample])
+            {
+               // if (m.distance > thresh) continue;
+                Hypo h;
+                h.NNIdx = m.trainIdx;
+                h.sampleIdx = m.queryIdx;
+                h.pos2D = scene_samples[sample].pos2D;
+                h.distance = m.distance;
+                Quaternionf q;
+                for (int i=0; i < 4; ++i) q.coeffs()(i) = tpls[h.NNIdx].label.at<float>(0,1+i);
+                h.pose.linear() = q.toRotationMatrix();
+                h.pose.translation() = f.cloud.at<Vector3f>(h.pos2D);
+                h.pose.translation()(2) += tpls[h.NNIdx].label.at<float>(0,5);
+                hypos.push_back(h);
+            }
         }
-        imshow("samples",temp); waitKey();
+
+        cerr << "#Hypos: " << hypos.size() << endl;
+
+
+        f.depth.setTo(0, f.depth>1.2f);
+        depth2cloud(f.depth,f.cloud,cam);
+
+        tbb::parallel_for<size_t>(0, hypos.size(), [&] (size_t i)
+        {
+            Hypo &h = hypos[i];
+            int scale = (h.pose.translation()(2)+0.05f)*10;
+            if (scale < 6 || scale > 11) return;
+            Quaternionf rot(h.pose.linear());
+            h.NN = nullptr;
+            float best_dist = numeric_limits<float>::max();
+            for (View &v : tpl_views[scale])
+            {
+                float dist = rot.angularDistance(v.rot);
+                if (dist>best_dist) continue;
+                best_dist = dist;
+                h.NN = &v;
+            }
+            assert (h.NN != nullptr);
+
+            h.cloud_pts.clear();
+            for (size_t i=0; i < h.NN->points.size(); ++i)
+            {
+                Point g = h.NN->points[i]+h.pos2D;
+                if((g.x <0) || (g.y <0) || (g.x > f.cloud.cols-1) || (g.y > f.cloud.rows-1)) continue;
+                h.cloud_pts.push_back(f.cloud.at<Vector3f>(g));
+            }
+        });
+
+
+
+        for (int refines = 0; refines < 1; refines++)
+        {
+            for (Hypo &h : hypos)
+            {
+
+                // Bring scene cloud from camera into local coordinates, run full model-based ICP and compute the updated pose
+                Isometry3f pose_inv = h.pose.inverse();
+                for(Vector3f &p : h.cloud_pts) p = pose_inv*p;
+                h.icp_ret = icp.compute(h.cloud_pts,10,0.0001f);
+                h.pose = h.pose*h.icp_ret.pose.inverse();
+            }
+
+            renderExtract(hypos, f.cloud, renderer,model);
+        }
+
+#if 1
+        tbb::parallel_for<size_t>(0, hypos.size(), [&] (size_t i)
+        {
+            Hypo &h = hypos[i];
+            h.killed = (h.icp_ret.error > 0.01f);
+            if (h.killed) return;
+            for (size_t i=0; i < h.points.size(); ++i)
+            {
+                Point &p = h.points[i];
+                if((p.x <0) || (p.y <0) || (p.x > f.cloud.cols-1) || (p.y > f.cloud.rows-1)) continue;
+                if (SQR(h.dep.at<float>(p.y-h.offset.second,p.x-h.offset.first)-f.depth.at<float>(p))<SQR(0.02f)) h.depth_sim++;
+            }
+            h.depth_sim /= h.points.size();
+            h.killed = (h.depth_sim < 0.8f);
+        });
+#endif
+
+
+#if 0
+        for (Hypo &h : hypos)
+        {
+            if (h.killed) continue;
+            imshow("query",showRGBDPatch(scene_samples[h.sampleIdx].patch,false));
+            imshow("kNN",showRGBDPatch(tpls[h.NNIdx].data,false));
+            cerr << h.distance << " \t " << h.depth_sim << " \t " << h.icp_ret.error << endl;
+            Mat out1, out2; f.color.copyTo(out1); f.color.copyTo(out2);
+            //for (Point &p : h.NN->points)  cv::circle(out1,p+h.pos2D,1,Scalar(0,0,255));
+            for (Point &p : h.points) cv::circle(out2,p,1,Scalar(0,255,0));imshow("out2",out2);
+            waitKey();
+        }
+#endif
+
+
+
+        bool found=false;
+        float min_thresh = 200.f;
+        for (Hypo &h : hypos)
+        {
+            if (h.killed) continue;
+            if(linemod_error(f.gt,h.pose,model,seq)>0.1f*diameters[seq]) continue;
+            found = true;
+            cerr << h.distance << " \t " << h.depth_sim << " \t " << h.icp_ret.error << endl;
+            min_thresh = std::min(min_thresh,h.distance);
+        }
+
+        if (found)
+        {
+            cerr << "FOUND" << endl;
+            hit_count++;
+            best_thresh   = std::max(best_thresh,min_thresh);
+        }
+
+        if (!hypos.empty())
+        {
+            Hypo &best_hypo = hypos[0];
+            for (Hypo &h : hypos)
+            {
+                if (h.killed) continue;
+                if (best_hypo.depth_sim < h.depth_sim)
+                    best_hypo = h;
+            }
+            if(linemod_error(f.gt,best_hypo.pose,model,seq)<=0.1f*diameters[seq]) correct_count++;
+        }
 
     }
+
+    cerr << seq << endl;
+    cerr << "Accuracy: " << correct_count/bench.frames.size() << endl;
+    cerr << "Recall: " << hit_count/bench.frames.size() << endl;
+    cerr << "Best thresh: " << best_thresh << endl;
 
     return 0;
 }

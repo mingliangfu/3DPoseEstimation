@@ -44,8 +44,7 @@ public:
 	
     void paint(int x=0,int y=0,int w=0,int h=0);
 
-    void bindVBOs(vector<Vector3f, Eigen::aligned_allocator<Vector3f> > &vertex_data,
-                  vector<Vector3i, Eigen::aligned_allocator<Vector3i> > &faces_data, GLuint &vert, GLuint &ind);
+    void bindVBOs(vector<Vec3f> &vertex,vector<Vec3i> &faces, GLuint &vert, GLuint &ind);
     void drawVBOs(GLuint vert, GLuint ind, int count);
 
     inline void copyColorTo(Mat &dest){m_color(copy_rect).copyTo(dest);}

@@ -10,7 +10,7 @@ INCLUDEPATH += /usr/local/include /usr/include/eigen3 /usr/include/hdf5/serial/ 
 
 QMAKE_CXXFLAGS += -std=c++11 -march=native -O3
 LIBPATH += /home/zsn/Documents/caffe/distribute/lib
-LIBS += -lopencv_core -lopencv_highgui -lopencv_imgproc -lopencv_imgcodecs -lopencv_viz -lhdf5_cpp -lhdf5 -lcaffe -lprotobuf -lglog -lopencv_features2d
+LIBS += -lopencv_core -lopencv_highgui -lopencv_imgproc -lopencv_imgcodecs -lopencv_viz -lhdf5_cpp -lhdf5 -lcaffe -lprotobuf -lglog -lopencv_features2d -ltbb
 
 unix:!macx {
     LIBS +=  -lboost_filesystem -lboost_system -lboost_program_options
@@ -31,12 +31,20 @@ macx: {
 SOURCES += detection_main.cpp  src/sphere.cpp  src/painter.cpp  src/model.cpp  \
     src/datasetmanager.cpp \
     src/networksolver.cpp \
-    src/hdf5handler.cpp
+    src/networkevaluator.cpp \
+    src/hdf5handler.cpp \
+    src/utilities.cpp \
+    src/icp.cpp \
+
 
 HEADERS += include/sphere.h include/painter.h include/model.h include/datasetmanager.h \
     include/datatypes.h \
     include/networksolver.h \
-    include/hdf5handler.h
+    include/networkevaluator.h \
+    include/hdf5handler.h \
+    include/utilities.h \
+    include/icp.h
+
 
 
 

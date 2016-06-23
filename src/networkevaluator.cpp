@@ -39,7 +39,7 @@ Mat networkEvaluator::computeDescriptors(caffe::Net<float> &CNN, vector<Sample> 
             }
             // Copy data memory into Caffe input layer, process batch and copy result back
             input_layer->set_cpu_data(data.data());
-            vector< caffe::Blob<float>* > out = CNN.ForwardPrefilled();
+            vector< caffe::Blob<float>* > out = CNN.Forward();
 
             for (size_t j=0; j < currIdxs.size(); ++j)
                 memcpy(descs.ptr<float>(currIdxs[j]), out[0]->cpu_data() + j*desc_dim, desc_dim*sizeof(float));
