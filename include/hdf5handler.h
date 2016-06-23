@@ -13,6 +13,10 @@ public:
     hdf5Handler();
     vector<Sample> read(string filename);
     void write(string filename, vector<Sample> &samples);
+    Isometry3f readBBPose(string filename);
+    Matrix3f readBBIntristicMats(string filename);
+    vector<Isometry3f,Eigen::aligned_allocator<Isometry3f>> readBBTrans(string filename);
+    Mat readBBDepth(string filename);
 };
 
 #endif // HDF5HANDLER_H

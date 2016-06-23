@@ -42,7 +42,7 @@ Benchmark datasetManager::loadLinemodBenchmark(string linemod_path, string seque
         }
 
     if (count>-1) last = count;
-//    cout << "  - loading frames in the range " << 0 << " - " << last << ":"<< endl;
+
     Benchmark bench;
     for (int i=0; i <= last;i++)
     {
@@ -58,7 +58,7 @@ Benchmark datasetManager::loadLinemodBenchmark(string linemod_path, string seque
             for(int l=0; l < 4;l++)
                 pose >> frame.gt.matrix()(k,l);
         bench.frames.push_back(frame);
-//        cout << sequence << ", sample:  " << i << endl;
+
         loadbar("  - loading frames: ",i,last);
     }
 
@@ -67,6 +67,59 @@ Benchmark datasetManager::loadLinemodBenchmark(string linemod_path, string seque
     bench.cam(0,2) = 325.2611f;
     bench.cam(1,1) = 573.5704f;
     bench.cam(1,2) = 242.0489f;
+    return bench;
+}
+
+Benchmark datasetManager::loadBigBirdBenchmark(string linemod_path, string sequence, int count /*=-1*/)
+{
+    string dir_string = linemod_path + sequence;
+    cerr << "  - loading benchmark " << dir_string << endl;
+
+    filesystem::path dir(dir_string);
+    if (!(filesystem::exists(dir) && filesystem::is_directory(dir)))
+    {
+        cout << "Could not open data in " << dir_string << ". Aborting..." << endl;
+        return Benchmark();
+    }
+    int last=0;
+    filesystem::directory_iterator end_iter;
+    for(filesystem::directory_iterator dir_iter(dir); dir_iter != end_iter ; ++dir_iter)
+        if (filesystem::is_regular_file(dir_iter->status()) )
+        {
+            string file = dir_iter->path().leaf().string();
+            if (file.substr(0,4)=="NP1_")
+                last = std::max(last,std::stoi(file.substr(4,file.length())));
+        }
+
+    if (count > -1) last = count;
+
+    Benchmark bench;
+
+    // Read intristic cameras
+    bench.cam = h5.readBBIntristicMats(dir_string + "/calibration.h5");
+
+    // Read transformations
+    vector<Isometry3f,Eigen::aligned_allocator<Isometry3f>> trans = h5.readBBTrans(dir_string + "/calibration.h5");
+
+    for (int np = 1; np <= 5; ++np) {
+        for (int i = 0; i <= last; i += 3)
+        {
+            Frame frame;
+            frame.nr = i * np;
+            frame.color = imread(dir_string + "/NP" + to_string(np) + "_" + to_string(i)+".jpg");
+            frame.color = frame.color(Rect(0, 32, 1280, 960));
+            resize(frame.color, frame.color, Size(640,480)); // rescale to 640*480
+            // imshow("ColorScaled: ", frame.color); waitKey();
+            frame.depth = h5.readBBDepth(dir_string + "/NP" + to_string(np) + "_" + to_string(i) + ".h5");
+            // imshow("Depth: ", frame.depth); waitKey();
+            assert(!frame.color.empty() && !frame.depth.empty());
+
+            Isometry3f pose = h5.readBBPose(dir_string + "/poses/NP5" + "_" + to_string(i) + "_pose.h5");
+            frame.gt = trans[np-1] * pose.inverse();
+            bench.frames.push_back(frame);
+        }
+        loadbar("  - loading frames: ", np, 5);
+    }
     return bench;
 }
 
@@ -119,13 +172,14 @@ Mat datasetManager::samplePatchWithScale(Mat &color, Mat &depth, int center_x, i
     return final;
 }
 
-vector<Sample> datasetManager::extractSceneSamplesPaul(vector<Frame,Eigen::aligned_allocator<Frame>> &frames, Matrix3f &cam, int index)
+vector<Sample> datasetManager::extractSceneSamplesPaul(vector<Frame,Eigen::aligned_allocator<Frame>> &frames, Matrix3f &cam, int index, Model &model)
 {
     vector<Sample> samples;
     for (Frame &f : frames)
     {
+        // Vector3f centroid = f.gt * model.centroid;
         Vector3f centroid = f.gt.translation();
-        Vector3f projCentroid = cam*centroid;
+        Vector3f projCentroid = cam * centroid;
         projCentroid /= projCentroid(2);
 
         Sample s;
@@ -139,6 +193,41 @@ vector<Sample> datasetManager::extractSceneSamplesPaul(vector<Frame,Eigen::align
             s.label.at<float>(0,1+i) = q.coeffs()(i);
 
         samples.push_back(s);
+
+#if 0
+        // Show rgbd patch
+        showRGBDPatch(s.data);
+
+        // Show centroid 2D
+        Rect rect(projCentroid(0)-2, projCentroid(1)+2, 2, 2);
+        rectangle(f.depth, rect, Scalar(0,0,255), 3);
+        imshow("Depth", f.depth);
+
+        // Visualize the cloud
+        Mat cloud(f.depth.rows,f.depth.cols, CV_32FC3);
+        depth2cloud(f.depth, cloud, cam);
+
+        Mat object = viz::readCloud("/media/zsn/Storage/BMC/Master/Implementation/dataset_bigbird/detergent.ply");
+
+        // Visualize for the case where feat_dim is 3D
+        viz::Viz3d visualizer("Cloud");
+        viz::WCloud wcloud(cloud, f.color);
+
+        cv::Mat camcv; eigen2cv(f.gt.matrix(),camcv);
+        visualizer.setViewerPose(cv::Affine3f::Identity());
+
+        // visualizer.showWidget("coo", viz::WCoordinateSystem());
+        visualizer.showWidget("cloud", wcloud);
+        visualizer.showWidget("object", viz::WCloud(object, viz::Color::yellow()), cv::Affine3f(camcv));
+        visualizer.showWidget("centroid", viz::WSphere(Point3f(centroid[0], centroid[1], centroid[2]), 0.02, 10, viz::Color::red()));
+        visualizer.spin();
+
+        // Render the model
+        SphereRenderer renderer;
+        renderer.init(cam);
+        Mat col,dep;
+        renderer.renderView(model,f.gt,col,dep,false);
+#endif
     }
     return samples;
 }
@@ -278,12 +367,13 @@ void datasetManager::createSceneSamplesAndTemplates()
         model.loadPLY(dataset_path + model_name + ".ply");
 
         // - load frames of benchmark and visualize
+        // Benchmark bench = loadBigBirdBenchmark(dataset_path, model_name);
         Benchmark bench = loadLinemodBenchmark(dataset_path, model_name);
         // showGT(bench,model);
 
         // Real data
         // - for each scene frame, extract RGBD sample
-        vector<Sample> realSamples = extractSceneSamplesPaul(bench.frames,bench.cam,model_index[model_name]);
+        vector<Sample> realSamples = extractSceneSamplesPaul(bench.frames,bench.cam,model_index[model_name], model);
 
         // - store realSamples to HDF5 files
         h5.write(hdf5_path + "realSamples_" + model_name +".h5", realSamples);
@@ -295,9 +385,9 @@ void datasetManager::createSceneSamplesAndTemplates()
         int subdivTmpl = 2; // sphere subdivision factor for templates
         vector<Sample> templates = createTemplatesWadim(model, bench.cam, model_index[model_name], subdivTmpl);
         vector<Sample> synthSamples = createTemplatesWadim(model, bench.cam, model_index[model_name], subdivTmpl+1);
-//          vector<Sample> temp = createTemplatesPaul(model, bench.cam, model_index[model_name], rotInv[global_model_index[model_name]]);
-//          vector<Sample> templates (temp.begin(),temp.begin() + 301);
-//          vector<Sample> synthSamples (temp.begin() + 302, temp.end());
+        // vector<Sample> temp = createTemplatesPaul(model, bench.cam, model_index[model_name], rotInv[global_model_index[model_name]]);
+        // vector<Sample> templates (temp.begin(),temp.begin() + 301);
+        // vector<Sample> synthSamples (temp.begin() + 302, temp.end());
 
         // - store realSamples to HDF5 files
         h5.write(hdf5_path + "templates_" + model_name + ".h5", templates);

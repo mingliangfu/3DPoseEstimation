@@ -7,6 +7,7 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/viz.hpp>
+#include <opencv2/core/eigen.hpp>
 
 #include <fstream>
 #include <sstream>
@@ -19,6 +20,7 @@
 #include "sphere.h"
 #include "datatypes.h"
 #include "hdf5handler.h"
+#include "utilities.h"
 
 using namespace Eigen;
 using namespace std;
@@ -30,8 +32,9 @@ class datasetManager
 public:
     datasetManager(string config);
     Benchmark loadLinemodBenchmark(string linemod_path, string sequence, int count=-1);
+    Benchmark loadBigBirdBenchmark(string linemod_path, string sequence, int count=-1);
     Mat samplePatchWithScale(Mat &color, Mat &depth, int center_x, int center_y, float z, float fx, float fy);
-    vector<Sample> extractSceneSamplesPaul(vector<Frame, Eigen::aligned_allocator<Frame>> &frames, Matrix3f &cam, int index);
+    vector<Sample> extractSceneSamplesPaul(vector<Frame, Eigen::aligned_allocator<Frame>> &frames, Matrix3f &cam, int index, Model &model);
     vector<Sample> extractSceneSamplesWadim(vector<Frame, Eigen::aligned_allocator<Frame>> &frames, Matrix3f &cam, int index);
     vector<Sample> createTemplatesPaul(Model &model, Matrix3f &cam, int index);
     vector<Sample> createTemplatesWadim(Model &model, Matrix3f &cam, int index, int subdiv);
