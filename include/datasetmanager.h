@@ -60,6 +60,7 @@ public:
 
 
 private:
+    std::random_device ran;
     vector<vector<Sample>> templates, training_set, test_set;
     vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>> tmpl_quats, training_quats, test_quats;
     vector<vector<int>> vertex_tmpl;

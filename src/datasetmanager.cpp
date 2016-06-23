@@ -317,7 +317,7 @@ vector<Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, 
     // Create synthetic views
     SphereRenderer sphere(cam);
     Vector3f scales(0.4, 1.1, 1.0);     // Render from 0.4 meters
-    Vector3f in_plane_rots(0,15,10);  // Render in_plane_rotations from -45 degree to 45 degree in 15degree steps
+    Vector3f in_plane_rots(-45,15,45);  // Render in_plane_rotations from -45 degree to 45 degree in 15 degree steps
     vector<RenderView, Eigen::aligned_allocator<RenderView> > views =
             sphere.createViews(model,subdiv,scales,in_plane_rots,true,false);  // Equidistant sphere sampling with recursive level subdiv
 
@@ -550,6 +550,7 @@ void datasetManager::fillVertexTmpl()
     vertex_tmpl.assign(nr_objects, vector<int>());
     for (size_t object = 0; object < nr_objects; ++object) {
         for (size_t tmpl_pose = 0; tmpl_pose < nr_template_poses; ++tmpl_pose) {
+            // If in-plane rotation is equal to zero
             if(templates[object][tmpl_pose].label.at<float>(0,6) == 0){
                 vertex_tmpl[object].push_back(tmpl_pose);
             }
