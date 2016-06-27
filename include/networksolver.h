@@ -51,9 +51,9 @@ public:
 
     // Const references to db objects
     datasetManager *db;
-    const vector<vector<int>>& vertex_tmpl;
     const vector<vector<Sample>>& templates, training_set, test_set;
     const vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>>& tmpl_quats, training_quats, test_quats;
+    const vector<vector<int>>& vertex_tmpl;
 
     // Config parameters
     vector<string> used_models, models;

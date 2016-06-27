@@ -152,8 +152,8 @@ Isometry3f hdf5Handler::readBBPose(string filename)
         float newbuffer[pose_dims[0]][pose_dims[1]]; //static array.
         pose.read(newbuffer, H5::PredType::NATIVE_FLOAT, memspace, pose_space);
 
-        for (int x = 0; x < pose_dims[0]; ++x) {
-            for (int y = 0; y < pose_dims[1]; ++y) {
+        for (size_t x = 0; x < pose_dims[0]; ++x) {
+            for (size_t y = 0; y < pose_dims[1]; ++y) {
                 poseMat.matrix()(x,y) = newbuffer[x][y];
             }
         }
@@ -184,8 +184,8 @@ Mat hdf5Handler::readBBDepth(string filename)
         depth.read(newbuffer, H5::PredType::NATIVE_FLOAT, memspace, depth_space);
         Mat depthImage = Mat(depth_dims[0],depth_dims[1], CV_32F);
 
-        for (int x = 0; x < depth_dims[0]; ++x) {
-            for (int y = 0; y < depth_dims[1]; ++y) {
+        for (size_t x = 0; x < depth_dims[0]; ++x) {
+            for (size_t y = 0; y < depth_dims[1]; ++y) {
                 depthImage.at<float>(x,y) = newbuffer[x][y];
             }
         }
@@ -225,39 +225,39 @@ Matrix3f hdf5Handler::readBBIntristicMats(string filename)
         float newbuffer[np_dims[0]][np_dims[1]];
 
         np1.read(newbuffer, H5::PredType::NATIVE_FLOAT, memspace, np_space);
-        for (int x = 0; x < np_dims[0]; ++x) {
-            for (int y = 0; y < np_dims[1]; ++y) {
+        for (size_t x = 0; x < np_dims[0]; ++x) {
+            for (size_t y = 0; y < np_dims[1]; ++y) {
                 cams[0].matrix()(x,y) = newbuffer[x][y];
             }
         }
         np2.read(newbuffer, H5::PredType::NATIVE_FLOAT, memspace, np_space);
-        for (int x = 0; x < np_dims[0]; ++x) {
-            for (int y = 0; y < np_dims[1]; ++y) {
+        for (size_t x = 0; x < np_dims[0]; ++x) {
+            for (size_t y = 0; y < np_dims[1]; ++y) {
                 cams[1].matrix()(x,y) = newbuffer[x][y];
             }
         }
         np3.read(newbuffer, H5::PredType::NATIVE_FLOAT, memspace, np_space);
-        for (int x = 0; x < np_dims[0]; ++x) {
-            for (int y = 0; y < np_dims[1]; ++y) {
+        for (size_t x = 0; x < np_dims[0]; ++x) {
+            for (size_t y = 0; y < np_dims[1]; ++y) {
                 cams[2].matrix()(x,y) = newbuffer[x][y];
             }
         }
         np4.read(newbuffer, H5::PredType::NATIVE_FLOAT, memspace, np_space);
-        for (int x = 0; x < np_dims[0]; ++x) {
-            for (int y = 0; y < np_dims[1]; ++y) {
+        for (size_t x = 0; x < np_dims[0]; ++x) {
+            for (size_t y = 0; y < np_dims[1]; ++y) {
                 cams[3].matrix()(x,y) = newbuffer[x][y];
             }
         }
         np5.read(newbuffer, H5::PredType::NATIVE_FLOAT, memspace, np_space);
-        for (int x = 0; x < np_dims[0]; ++x) {
-            for (int y = 0; y < np_dims[1]; ++y) {
+        for (size_t x = 0; x < np_dims[0]; ++x) {
+            for (size_t y = 0; y < np_dims[1]; ++y) {
                 cams[4].matrix()(x,y) = newbuffer[x][y];
             }
         }
         // Average all the intristic cameras
-        for (int x = 0; x < np_dims[0]; ++x) {
-            for (int y = 0; y < np_dims[1]; ++y) {
-                for (int sum = 0; sum < cams.size(); ++sum) {
+        for (size_t x = 0; x < np_dims[0]; ++x) {
+            for (size_t y = 0; y < np_dims[1]; ++y) {
+                for (size_t sum = 0; sum < cams.size(); ++sum) {
                     argcam(x,y) += cams[sum].matrix()(x,y);
                 }
                 argcam(x,y) /= cams.size();
@@ -295,32 +295,32 @@ vector<Isometry3f,Eigen::aligned_allocator<Isometry3f>> hdf5Handler::readBBTrans
         float newbuffer[np_dims[0]][np_dims[1]]; //static array.
 
         np1.read(newbuffer, H5::PredType::NATIVE_FLOAT, memspace, np_space);
-        for (int x = 0; x < np_dims[0]; ++x) {
-            for (int y = 0; y < np_dims[1]; ++y) {
+        for (size_t x = 0; x < np_dims[0]; ++x) {
+            for (size_t y = 0; y < np_dims[1]; ++y) {
                 trans[0].matrix()(x,y) = newbuffer[x][y];
             }
         }
         np2.read(newbuffer, H5::PredType::NATIVE_FLOAT, memspace, np_space);
-        for (int x = 0; x < np_dims[0]; ++x) {
-            for (int y = 0; y < np_dims[1]; ++y) {
+        for (size_t x = 0; x < np_dims[0]; ++x) {
+            for (size_t y = 0; y < np_dims[1]; ++y) {
                 trans[1].matrix()(x,y) = newbuffer[x][y];
             }
         }
         np3.read(newbuffer, H5::PredType::NATIVE_FLOAT, memspace, np_space);
-        for (int x = 0; x < np_dims[0]; ++x) {
-            for (int y = 0; y < np_dims[1]; ++y) {
+        for (size_t x = 0; x < np_dims[0]; ++x) {
+            for (size_t y = 0; y < np_dims[1]; ++y) {
                 trans[2].matrix()(x,y) = newbuffer[x][y];
             }
         }
         np4.read(newbuffer, H5::PredType::NATIVE_FLOAT, memspace, np_space);
-        for (int x = 0; x < np_dims[0]; ++x) {
-            for (int y = 0; y < np_dims[1]; ++y) {
+        for (size_t x = 0; x < np_dims[0]; ++x) {
+            for (size_t y = 0; y < np_dims[1]; ++y) {
                 trans[3].matrix()(x,y) = newbuffer[x][y];
             }
         }
         np5.read(newbuffer, H5::PredType::NATIVE_FLOAT, memspace, np_space);
-        for (int x = 0; x < np_dims[0]; ++x) {
-            for (int y = 0; y < np_dims[1]; ++y) {
+        for (size_t x = 0; x < np_dims[0]; ++x) {
+            for (size_t y = 0; y < np_dims[1]; ++y) {
                 trans[4].matrix()(x,y) = newbuffer[x][y];
             }
         }

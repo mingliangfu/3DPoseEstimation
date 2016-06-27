@@ -69,6 +69,7 @@ private:
     vector<string> models, used_models;
     unordered_map<string,int> model_index, global_model_index;
     vector<int> rotInv;
+    bool random_background;
     hdf5Handler h5;
 
 };

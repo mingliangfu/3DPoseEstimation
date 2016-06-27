@@ -7,6 +7,7 @@ datasetManager::datasetManager(string config)
     dataset_path = pt.get<string>("paths.dataset_path");
     hdf5_path = pt.get<string>("paths.hdf5_path");
 
+    random_background = pt.get<bool>("input.random_background");
     models = to_array<string>(pt.get<string>("input.models"));
     used_models = to_array<string>(pt.get<string>("input.used_models"));
     rotInv = to_array<int>(pt.get<string>("input.rotInv"));
@@ -327,7 +328,7 @@ vector<Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, 
     SphereRenderer sphere(cam);
     Mat normals;
     Vector3f scales(0.4, 1.1, 1.0);     // Render from 0.4 meters
-    Vector3f in_plane_rots(-15,15,15);  // Render in_plane_rotations from -45 degree to 45 degree in 15 degree steps
+    Vector3f in_plane_rots(-45,15,45);  // Render in_plane_rotations from -45 degree to 45 degree in 15 degree steps
     vector<RenderView, Eigen::aligned_allocator<RenderView> > views =
             sphere.createViews(model,subdiv,scales,in_plane_rots,true,false);  // Equidistant sphere sampling with recursive level subdiv
 
@@ -344,7 +345,7 @@ vector<Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, 
 
         Sample sample;
         sample.data = samplePatchWithScale(v.col,v.dep,normals,cam(0,2),cam(1,2),z,cam(0,0),cam(1,1));
-        randomColorFill(sample.data);
+        if (random_background) randomColorFill(sample.data);
 
         // Build 6-dimensional label: model index + quaternion + vertex + in-plane rotation
         sample.label = Mat(1,7,CV_32F);
@@ -359,7 +360,7 @@ vector<Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, 
             curr_rot = in_plane_rots(0);
             vertex++;
         } else {
-            curr_rot = curr_rot + in_plane_rots(1);
+            curr_rot += in_plane_rots(1);
         }
         samples.push_back(sample);
     }

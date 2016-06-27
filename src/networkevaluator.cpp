@@ -110,3 +110,77 @@ void networkEvaluator::computeKNNAccuracy(vector<vector<vector<int>>> &maxSimTmp
     cout << "Intra-class accuracy: " << intra/(float)(nr_objects*nr_training_poses)*100 << endl;
     cout << "Inter-class accuracy: " << inter/(float)(nr_objects*nr_training_poses)*100 << endl;
 }
+
+void networkEvaluator::computeHistogram(caffe::Net<float> &CNN, const vector<vector<Sample>> &templates, const vector<vector<Sample>> &training_set, const vector<vector<Sample>> &test_set, vector<int> rotInv)
+{
+    // Get the test data
+    Mat DBfeats, DBtest;
+    vector<Sample> test, tmpl;
+
+    for (size_t object = 0; object < templates.size(); ++object) {
+        DBfeats.push_back(computeDescriptors(CNN, templates[object]));
+        DBtest.push_back(computeDescriptors(CNN, test_set[object]));
+        for (Sample s : test_set[object]) test.push_back(s);
+        for (Sample s : templates[object]) tmpl.push_back(s);
+    }
+
+    // Create a k-NN matcher
+    cv::Ptr<DescriptorMatcher> matcher;
+    matcher = DescriptorMatcher::create("BruteForce");
+    matcher->add(DBfeats);
+
+    vector< vector<DMatch> > matches;
+    int knn = 1;
+    matcher->knnMatch(DBtest, matches, knn);
+
+    vector<float> bins = {-1, 5, 20, 40, 180};
+    vector<float> histo(bins.size(), 0);
+
+    for (int i=0; i < DBtest.rows; ++i)
+        for (DMatch &m : matches[i])
+        {
+            Mat query = showRGBDPatch(test[m.queryIdx].data, false);
+            Mat nn = showRGBDPatch(tmpl[m.trainIdx].data, false);
+            // cerr << DBtest.row(m.queryIdx) << endl;
+            // cerr << DBfeats.row(m.trainIdx) << endl;
+            imshow("query",query); imshow("nn", nn); waitKey();
+
+            // If objects are different fill the first bin
+            if (test[m.queryIdx].label.at<float>(0,0) != tmpl[m.trainIdx].label.at<float>(0,0))
+            {
+                histo[0]++;
+                continue;
+            }
+
+            // Get the quaternions
+            Quaternionf sampleQuat, kNNQuat;
+            for (int q = 0; q < 4; ++q)
+            {
+                sampleQuat.coeffs()(q) = test[m.queryIdx].label.at<float>(0,1+q);
+                kNNQuat.coeffs()(q) = tmpl[m.trainIdx].label.at<float>(0,1+q);
+            }
+
+            // Angular difference
+            float diff;
+            // If object is normal compare angular distance, else elevation level
+            if(rotInv[test[m.queryIdx].label.at<float>(0,0)] == 0) {
+                diff = sampleQuat.angularDistance(kNNQuat)*180.f/M_PI;
+            } else {
+                diff = abs(acos(sampleQuat.toRotationMatrix()(2,2)) - acos(kNNQuat.toRotationMatrix()(2,2)))*180.f/M_PI;
+            }
+
+            for (size_t b = 1; b < bins.size(); ++b)
+                if (diff < bins[b])
+                {
+                    histo[b]++;
+                    break;
+                }
+        }
+
+    float total=0;
+    for (float &i : histo) total += i;
+    for (float &i : histo) i /= total;
+    for (size_t i=0; i < histo.size(); ++i)
+        clog << i << " " << histo[i] << endl;
+
+}
