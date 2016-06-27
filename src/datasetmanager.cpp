@@ -124,7 +124,7 @@ Benchmark datasetManager::loadBigBirdBenchmark(string linemod_path, string seque
 }
 
 // Takes a color and depth frame and samples a normalized 4-channel patch at the given center position and z-scale
-Mat datasetManager::samplePatchWithScale(Mat &color, Mat &depth, int center_x, int center_y, float z, float fx, float fy)
+Mat datasetManager::samplePatchWithScale(Mat &color, Mat &depth, Mat &normals, int center_x, int center_y, float z, float fx, float fy)
 {
     // Make a cut of metric size m
     float m = 0.2f;
@@ -142,32 +142,29 @@ Mat datasetManager::samplePatchWithScale(Mat &color, Mat &depth, int center_x, i
     assert (cut.y >= 0 && cut.y < color.rows-screenH);
 
     // Cut-out from whole image
-    Mat temp_col, temp_dep, final;
+    Mat temp_col, temp_dep, temp_nor, final;
     color(cut).copyTo(temp_col);
     depth(cut).copyTo(temp_dep);
+    normals(cut).copyTo(temp_nor);
 
-    Mat bg = (temp_dep == 0);
+    // Convert to float
+    temp_col.convertTo(temp_col, CV_32FC3, 1/255.f);
 
-    // Convert to float and rescale to [-1,1]
-    temp_col.convertTo(temp_col,CV_32FC3,1/255.f);
-    temp_col = (temp_col-0.5f)*2.f;
-
-    // Demean with central z value, clamp and rescale to [-1,1]
+    // Demean with central z value, clamp and rescale to [0,1]
     temp_dep -= z;
     temp_dep.setTo(-m, temp_dep < -m);
     temp_dep.setTo(m, temp_dep > m);
     temp_dep *= 1.0f / m;
+    temp_dep = (temp_dep + 1.f) * 0.5f;
 
     // Resize
     const int CNN_INPUT_SIZE = 64;
     const Size final_size(CNN_INPUT_SIZE,CNN_INPUT_SIZE);
     resize(temp_col,temp_col,final_size);   // Standard bilinear interpolation
+    resize(temp_nor,temp_nor,final_size);   // Standard bilinear interpolation
     resize(temp_dep,temp_dep,final_size,0,0,INTER_NEAREST);// Nearest-neighbor interpolation for depth!!!
 
-    cv::merge(vector<Mat>{temp_col,temp_dep},final);
-
-    // Bring all back to [0,1]
-    final = (final+1.f)*0.5f;
+    cv::merge(vector<Mat>{temp_col,temp_dep,temp_nor},final);
 
     return final;
 }
@@ -182,8 +179,11 @@ vector<Sample> datasetManager::extractSceneSamplesPaul(vector<Frame,Eigen::align
         Vector3f projCentroid = cam * centroid;
         projCentroid /= projCentroid(2);
 
+        // Compute normals
+        depth2normals(f.depth,f.normals,cam);
+
         Sample s;
-        s.data = samplePatchWithScale(f.color,f.depth,projCentroid(0),projCentroid(1),centroid(2),cam(0,0),cam(1,1));
+        s.data = samplePatchWithScale(f.color,f.depth,f.normals,projCentroid(0),projCentroid(1),centroid(2),cam(0,0),cam(1,1));
 
         // Build 5-dimensional label: model index + quaternion
         s.label = Mat(1,5,CV_32F);
@@ -238,14 +238,17 @@ vector<Sample> datasetManager::extractSceneSamplesWadim(vector<Frame,Eigen::alig
     for (Frame &f : frames)
     {
         // Instead of taking object centroid, take the surface point as central sample point
-        Vector3f projCentroid = cam*f.gt.translation();
+        Vector3f projCentroid = cam * f.gt.translation();
         projCentroid /= projCentroid(2);
 
         float z = f.depth.at<float>(projCentroid(1),projCentroid(0));
         assert(z>0.0f);
 
+        // Compute normals
+        depth2normals(f.depth,f.normals,cam);
+
         Sample s;
-        s.data = samplePatchWithScale(f.color,f.depth,projCentroid(0),projCentroid(1),z,cam(0,0),cam(1,1));
+        s.data = samplePatchWithScale(f.color,f.depth,f.normals,projCentroid(0),projCentroid(1),z,cam(0,0),cam(1,1));
 
         // Build 5-dimensional label: model index + quaternion
         s.label = Mat(1,5,CV_32F);
@@ -261,7 +264,6 @@ vector<Sample> datasetManager::extractSceneSamplesWadim(vector<Frame,Eigen::alig
 
 vector<Sample> datasetManager::createTemplatesPaul(Model &model, Matrix3f &cam, int index)
 {
-
     ifstream file(dataset_path + "paul/camPositionsElAz.txt");
     assert(file.good());
     vector<Vector2f, Eigen::aligned_allocator<Vector2f> > sphereCoords(1542);
@@ -286,18 +288,26 @@ vector<Sample> datasetManager::createTemplatesPaul(Model &model, Matrix3f &cam, 
     // Render each and create proper sample
     SphereRenderer renderer;
     renderer.init(cam);
-    Mat col,dep;
+    Mat color,depth,normals;
     Isometry3f pose = Isometry3f::Identity();
     pose.translation()(2) = 0.4f;
 
     vector<Sample> samples;
     for (Matrix3f &m : camPos)
     {
+        // Instead of taking object centroid, take the surface point as central sample point
+        // float z = v.dep.at<float>(cam(1,2),cam(0,2));
+        // assert(z>0.0f);
+        float z = pose.translation()(2);
+
         pose.linear() = m;
-        renderer.renderView(model,pose,col,dep,false);
+        renderer.renderView(model,pose,color,depth,false);
+
+        // Compute normals
+        depth2normals(depth,normals,cam);
 
         Sample sample;
-        sample.data = samplePatchWithScale(col,dep,cam(0,2),cam(1,2),pose.translation()(2),cam(0,0),cam(1,1));
+        sample.data = samplePatchWithScale(color,depth,normals,cam(0,2),cam(1,2),z,cam(0,0),cam(1,1));
 
         // Build 5-dimensional label: model index + quaternion
         sample.label = Mat(1,5,CV_32F);
@@ -313,11 +323,11 @@ vector<Sample> datasetManager::createTemplatesPaul(Model &model, Matrix3f &cam, 
 
 vector<Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, int index, int subdiv)
 {
-
     // Create synthetic views
     SphereRenderer sphere(cam);
+    Mat normals;
     Vector3f scales(0.4, 1.1, 1.0);     // Render from 0.4 meters
-    Vector3f in_plane_rots(-45,15,45);  // Render in_plane_rotations from -45 degree to 45 degree in 15 degree steps
+    Vector3f in_plane_rots(-15,15,15);  // Render in_plane_rotations from -45 degree to 45 degree in 15 degree steps
     vector<RenderView, Eigen::aligned_allocator<RenderView> > views =
             sphere.createViews(model,subdiv,scales,in_plane_rots,true,false);  // Equidistant sphere sampling with recursive level subdiv
 
@@ -328,9 +338,13 @@ vector<Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, 
         // Instead of taking object centroid, take the surface point as central sample point
         //        float z = v.dep.at<float>(cam(1,2),cam(0,2));
         //        assert(z>0.0f);
+        float z = v.pose.translation()(2);
+
+        depth2normals(v.dep,normals,cam);
 
         Sample sample;
-        sample.data = samplePatchWithScale(v.col,v.dep,cam(0,2),cam(1,2),v.pose.translation()(2),cam(0,0),cam(1,1));
+        sample.data = samplePatchWithScale(v.col,v.dep,normals,cam(0,2),cam(1,2),z,cam(0,0),cam(1,1));
+        randomColorFill(sample.data);
 
         // Build 6-dimensional label: model index + quaternion + vertex + in-plane rotation
         sample.label = Mat(1,7,CV_32F);
@@ -347,7 +361,6 @@ vector<Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, 
         } else {
             curr_rot = curr_rot + in_plane_rots(1);
         }
-
         samples.push_back(sample);
     }
     return samples;
@@ -519,32 +532,6 @@ void datasetManager::computeQuaternions()
     }
 }
 
-void datasetManager::randomColorFill(Mat &patch)
-{
-    int chans = patch.channels();
-    std::uniform_real_distribution<float> p(0.f,1.f);
-    for (int r=0; r < patch.rows; ++r)
-        for (int c=0; c < patch.cols; ++c)
-        {
-            float *row = patch.ptr<float>(r);
-            if (row[c*chans + 3] > 0) continue;
-            for (int ch=0; ch < 3; ++ch)
-                row[c*chans + ch] =  p(ran);
-        }
-}
-
-void datasetManager::addNoiseToSynthData(unsigned int copies, vector<vector<Sample>>& trainingSet)
-{
-    for (size_t copy = 0; copy < copies; ++copy) {
-        for (size_t object = 0; object < trainingSet.size(); ++object) {
-            for (size_t pose = 0; pose < trainingSet[object].size(); ++pose) {
-                // create a new image, add noise, push it back to the training set
-//                trainingSet[object][pose].push_back(noise_image);
-            }
-        }
-    }
-}
-
 void datasetManager::fillVertexTmpl()
 {
     vertex_tmpl.assign(nr_objects, vector<int>());
@@ -554,6 +541,22 @@ void datasetManager::fillVertexTmpl()
             if(templates[object][tmpl_pose].label.at<float>(0,6) == 0){
                 vertex_tmpl[object].push_back(tmpl_pose);
             }
+        }
+    }
+}
+
+void datasetManager::randomColorFill(Mat &patch)
+{
+    int chans = patch.channels();
+    std::uniform_real_distribution<float> p(0.f,1.f);
+    for (int r=0; r < patch.rows; ++r)
+    {
+        float *row = patch.ptr<float>(r);
+        for (int c=0; c < patch.cols; ++c)
+        {
+            if (row[c*chans + 3] > 0) continue;
+            for (int ch = 0; ch < 3; ++ch)
+                row[c*chans + ch] =  p(ran);
         }
     }
 }

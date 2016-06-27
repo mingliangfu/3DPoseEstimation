@@ -33,7 +33,7 @@ public:
     datasetManager(string config);
     Benchmark loadLinemodBenchmark(string linemod_path, string sequence, int count=-1);
     Benchmark loadBigBirdBenchmark(string linemod_path, string sequence, int count=-1);
-    Mat samplePatchWithScale(Mat &color, Mat &depth, int center_x, int center_y, float z, float fx, float fy);
+    Mat samplePatchWithScale(Mat &color, Mat &depth, Mat &normals, int center_x, int center_y, float z, float fx, float fy);
     vector<Sample> extractSceneSamplesPaul(vector<Frame, Eigen::aligned_allocator<Frame>> &frames, Matrix3f &cam, int index, Model &model);
     vector<Sample> extractSceneSamplesWadim(vector<Frame, Eigen::aligned_allocator<Frame>> &frames, Matrix3f &cam, int index);
     vector<Sample> createTemplatesPaul(Model &model, Matrix3f &cam, int index);
@@ -43,7 +43,6 @@ public:
     void generateDatasets();
     void computeQuaternions();
     void fillVertexTmpl();
-    void addNoiseToSynthData(unsigned int copies, vector<vector<Sample>>& trainingSet);
     void randomColorFill(Mat &patch);
     const vector<vector<Sample>>& getTrainingSet() const {return training_set;}
     const vector<vector<Sample>>& getTemplateSet() const {return templates;}
