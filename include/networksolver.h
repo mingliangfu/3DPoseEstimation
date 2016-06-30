@@ -29,7 +29,7 @@ class networkSolver
 {
 public:
     networkSolver(string config, datasetManager *db);
-    vector<Sample> buildBatch(int batch_size, int iter, bool bootstrapping);
+    vector<Sample> buildBatch(int batch_size, int iter, bool bootstrapping, unsigned int triplet_size);
     void trainNet(int resume_iter=0);
     void binarizeNet(int resume_iter=0);
 
@@ -38,9 +38,8 @@ public:
     bool bootstrap(caffe::Net<float> &CNN, int iter);
 
     void readParam(string config);
+    void computeMaxSimTmplInplane();
     void computeMaxSimTmpl();
-    int getTmplVertex(int object, int pose){return templates[object][pose].label.at<float>(0,5);}
-    int getTmplRot(int object, int pose){return templates[object][pose].label.at<float>(0,6);}
 
     hdf5Handler h5;
     std::random_device ran;
@@ -53,7 +52,6 @@ public:
     datasetManager *db;
     const vector<vector<Sample>>& templates, training_set, test_set;
     const vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>>& tmpl_quats, training_quats, test_quats;
-    const vector<vector<int>>& vertex_tmpl;
 
     // Config parameters
     vector<string> used_models, models;

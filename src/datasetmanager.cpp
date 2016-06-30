@@ -8,6 +8,7 @@ datasetManager::datasetManager(string config)
     hdf5_path = pt.get<string>("paths.hdf5_path");
 
     random_background = pt.get<bool>("input.random_background");
+    inplane = pt.get<bool>("input.inplane");
     models = to_array<string>(pt.get<string>("input.models"));
     used_models = to_array<string>(pt.get<string>("input.used_models"));
     rotInv = to_array<int>(pt.get<string>("input.rotInv"));
@@ -186,12 +187,14 @@ vector<Sample> datasetManager::extractSceneSamplesPaul(vector<Frame,Eigen::align
         Sample s;
         s.data = samplePatchWithScale(f.color,f.depth,f.normals,projCentroid(0),projCentroid(1),centroid(2),cam(0,0),cam(1,1));
 
-        // Build 5-dimensional label: model index + quaternion
-        s.label = Mat(1,5,CV_32F);
+        // Build 5-dimensional label: model index + quaternion + translation
+        s.label = Mat(1,8,CV_32F);
         s.label.at<float>(0,0) = index;
         Quaternionf q(f.gt.linear());
         for (int i=0; i < 4; ++i)
             s.label.at<float>(0,1+i) = q.coeffs()(i);
+        for (size_t tr = 0; tr < 3; ++tr)
+            s.label.at<float>(0,5+tr) = f.gt.inverse().translation()(tr);
 
         samples.push_back(s);
 
@@ -251,12 +254,14 @@ vector<Sample> datasetManager::extractSceneSamplesWadim(vector<Frame,Eigen::alig
         Sample s;
         s.data = samplePatchWithScale(f.color,f.depth,f.normals,projCentroid(0),projCentroid(1),z,cam(0,0),cam(1,1));
 
-        // Build 5-dimensional label: model index + quaternion
-        s.label = Mat(1,5,CV_32F);
+        // Build 5-dimensional label: model index + quaternion + translation
+        s.label = Mat(1,8,CV_32F);
         s.label.at<float>(0,0) = index;
         Quaternionf q(f.gt.linear());
         for (int i=0; i < 4; ++i)
             s.label.at<float>(0,1+i) = q.coeffs()(i);
+        for (size_t tr = 0; tr < 3; ++tr)
+            s.label.at<float>(0,5+tr) = f.gt.inverse().translation()(tr);
 
         samples.push_back(s);
     }
@@ -310,29 +315,40 @@ vector<Sample> datasetManager::createTemplatesPaul(Model &model, Matrix3f &cam, 
         Sample sample;
         sample.data = samplePatchWithScale(color,depth,normals,cam(0,2),cam(1,2),z,cam(0,0),cam(1,1));
 
-        // Build 5-dimensional label: model index + quaternion
-        sample.label = Mat(1,5,CV_32F);
+        // Build 5-dimensional label: model index + quaternion + translation
+        sample.label = Mat(1,8,CV_32F);
         sample.label.at<float>(0,0) = index;
         Quaternionf q(pose.linear());
         for (int i=0; i < 4; ++i)
             sample.label.at<float>(0,1+i) = q.coeffs()(i);
+        for (size_t tr = 0; tr < 3; ++tr)
+            sample.label.at<float>(0,5+tr) = pose.inverse().translation()(tr);
 
         samples.push_back(sample);
+
+        // Add random backgrounds
+        if (samples.size() > 301 && random_background) {
+            randomColorFill(sample.data);
+            samples.push_back(sample);
+        }
     }
     return samples;
 }
 
-vector<Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, int index, int subdiv)
+vector<Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, int index, int subdiv, bool random_bg)
 {
     // Create synthetic views
     SphereRenderer sphere(cam);
     Mat normals;
     Vector3f scales(0.4, 1.1, 1.0);     // Render from 0.4 meters
-    Vector3f in_plane_rots(-45,15,45);  // Render in_plane_rotations from -45 degree to 45 degree in 15 degree steps
+
+    Vector3f in_plane_rots;
+    if (inplane) { in_plane_rots = Vector3f(-45,15,45); }
+            else { in_plane_rots = Vector3f(0,15,10); }
+
     vector<RenderView, Eigen::aligned_allocator<RenderView> > views =
             sphere.createViews(model,subdiv,scales,in_plane_rots,true,false);  // Equidistant sphere sampling with recursive level subdiv
 
-    int vertex = 0, curr_rot = in_plane_rots(0);
     vector<Sample> samples;
     for (RenderView &v : views)
     {
@@ -347,22 +363,23 @@ vector<Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, 
         sample.data = samplePatchWithScale(v.col,v.dep,normals,cam(0,2),cam(1,2),z,cam(0,0),cam(1,1));
         if (random_background) randomColorFill(sample.data);
 
-        // Build 6-dimensional label: model index + quaternion + vertex + in-plane rotation
-        sample.label = Mat(1,7,CV_32F);
+        // Build 6-dimensional label: model index + quaternion + translation
+        sample.label = Mat(1,8,CV_32F);
         sample.label.at<float>(0,0) = index;
         Quaternionf q(v.pose.linear());
         for (int i=0; i < 4; ++i)
             sample.label.at<float>(0,1+i) = q.coeffs()(i);
-        sample.label.at<float>(0,5) = vertex;
-        sample.label.at<float>(0,6) = curr_rot;
 
-        if (curr_rot == in_plane_rots(2)) {
-            curr_rot = in_plane_rots(0);
-            vertex++;
-        } else {
-            curr_rot += in_plane_rots(1);
+        for (size_t tr = 0; tr < 3; ++tr) {
+            sample.label.at<float>(0,5+tr) = v.pose.inverse().translation()(tr);
         }
+
         samples.push_back(sample);
+
+        if (random_bg) {
+            randomColorFill(sample.data);
+            samples.push_back(sample);
+        }
     }
     return samples;
 
@@ -397,11 +414,11 @@ void datasetManager::createSceneSamplesAndTemplates()
         clog << "  - render synthetic data:" << endl;
         // - create synthetic samples and templates
         int subdivTmpl = 2; // sphere subdivision factor for templates
-        vector<Sample> templates = createTemplatesWadim(model, bench.cam, model_index[model_name], subdivTmpl);
-        vector<Sample> synthSamples = createTemplatesWadim(model, bench.cam, model_index[model_name], subdivTmpl+1);
-        // vector<Sample> temp = createTemplatesPaul(model, bench.cam, model_index[model_name], rotInv[global_model_index[model_name]]);
-        // vector<Sample> templates (temp.begin(),temp.begin() + 301);
-        // vector<Sample> synthSamples (temp.begin() + 302, temp.end());
+//        vector<Sample> templates = createTemplatesWadim(model, bench.cam, model_index[model_name], subdivTmpl, false);
+//        vector<Sample> synthSamples = createTemplatesWadim(model, bench.cam, model_index[model_name], subdivTmpl+1, random_background);
+         vector<Sample> temp = createTemplatesPaul(model, bench.cam, model_index[model_name]);
+         vector<Sample> templates (temp.begin(),temp.begin() + 301);
+         vector<Sample> synthSamples (temp.begin() + 302, temp.end());
 
         // - store realSamples to HDF5 files
         h5.write(hdf5_path + "templates_" + model_name + ".h5", templates);
@@ -500,7 +517,6 @@ void datasetManager::generateDatasets()
     nr_test_poses = test_set[0].size();
 
     computeQuaternions();
-    fillVertexTmpl();
 }
 
 void datasetManager::computeQuaternions()
@@ -530,19 +546,6 @@ void datasetManager::computeQuaternions()
         for (size_t k = 0; k < test_quats[i].size(); ++k)
             for (int j = 0; j < 4; ++j)
                 test_quats[i][k].coeffs()(j) = test_set[i][k].label.at<float>(0,1+j);
-    }
-}
-
-void datasetManager::fillVertexTmpl()
-{
-    vertex_tmpl.assign(nr_objects, vector<int>());
-    for (size_t object = 0; object < nr_objects; ++object) {
-        for (size_t tmpl_pose = 0; tmpl_pose < nr_template_poses; ++tmpl_pose) {
-            // If in-plane rotation is equal to zero
-            if(templates[object][tmpl_pose].label.at<float>(0,6) == 0){
-                vertex_tmpl[object].push_back(tmpl_pose);
-            }
-        }
     }
 }
 

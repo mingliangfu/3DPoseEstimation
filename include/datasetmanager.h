@@ -37,7 +37,7 @@ public:
     vector<Sample> extractSceneSamplesPaul(vector<Frame, Eigen::aligned_allocator<Frame>> &frames, Matrix3f &cam, int index, Model &model);
     vector<Sample> extractSceneSamplesWadim(vector<Frame, Eigen::aligned_allocator<Frame>> &frames, Matrix3f &cam, int index);
     vector<Sample> createTemplatesPaul(Model &model, Matrix3f &cam, int index);
-    vector<Sample> createTemplatesWadim(Model &model, Matrix3f &cam, int index, int subdiv);
+    vector<Sample> createTemplatesWadim(Model &model, Matrix3f &cam, int index, int subdiv, bool random_bg);
     void createSceneSamplesAndTemplates();
     void saveSamples();
     void generateDatasets();
@@ -46,11 +46,10 @@ public:
     void randomColorFill(Mat &patch);
     const vector<vector<Sample>>& getTrainingSet() const {return training_set;}
     const vector<vector<Sample>>& getTemplateSet() const {return templates;}
-    const vector<vector<Sample>>& getTestSet() const {return training_set;}
+    const vector<vector<Sample>>& getTestSet() const {return test_set;}
     const vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>>& getTmplQuats() const {return tmpl_quats;}
     const vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>>& getTrainingQuats() const {return training_quats;}
     const vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>>& getTestQuats() const {return test_quats;}
-    const vector<vector<int>>& getVertexTmpl() const {return vertex_tmpl;}
 
     int getTrainingSetSize() {return training_set[0].size();}
     int getTemplateSetSize() {return templates[0].size();}
@@ -62,14 +61,13 @@ private:
     std::random_device ran;
     vector<vector<Sample>> templates, training_set, test_set;
     vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>> tmpl_quats, training_quats, test_quats;
-    vector<vector<int>> vertex_tmpl;
     unsigned int nr_objects, nr_training_poses, nr_template_poses, nr_test_poses;
 
     string dataset_path, hdf5_path;
     vector<string> models, used_models;
     unordered_map<string,int> model_index, global_model_index;
     vector<int> rotInv;
-    bool random_background;
+    bool random_background, inplane;
     hdf5Handler h5;
 
 };

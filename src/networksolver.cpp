@@ -2,16 +2,14 @@
 
 networkSolver::networkSolver(string config, datasetManager* db): db(db), templates(db->getTemplateSet()), training_set(db->getTrainingSet()),
                                                                  test_set(db->getTestSet()), tmpl_quats(db->getTmplQuats()),
-                                                                 training_quats(db->getTrainingQuats()), test_quats(db->getTestQuats()),
-                                                                 vertex_tmpl(db->getVertexTmpl())
+                                                                 training_quats(db->getTrainingQuats()), test_quats(db->getTestQuats())
 {
     // Read config parameters
     readParam(config);
 }
 
-vector<Sample> networkSolver::buildBatch(int batch_size, int iter, bool bootstrapping)
+vector<Sample> networkSolver::buildBatch(int batch_size, int iter, bool bootstrapping, unsigned int triplet_size)
 {
-    int triplet_size = 5;
     vector<Sample> batch;
     size_t puller = 0, pusher0 = 0, pusher1 = 0, pusher2 = 0;
     TripletWang triplet;
@@ -19,7 +17,7 @@ vector<Sample> networkSolver::buildBatch(int batch_size, int iter, bool bootstra
     // Random generator for object selection and template selection
     std::uniform_int_distribution<size_t> ran_obj(0, nr_objects-1), ran_tpl(0, nr_template_poses-1);
 
-    for (int linearId = iter * batch_size/triplet_size; linearId < (iter * batch_size/triplet_size) + batch_size/triplet_size; ++linearId) {
+    for (size_t linearId = iter * batch_size/triplet_size; linearId < (iter * batch_size/triplet_size) + batch_size/triplet_size; ++linearId) {
 
         // Calculate 2d indices
         unsigned int training_pose = linearId / nr_objects;
@@ -52,24 +50,13 @@ vector<Sample> networkSolver::buildBatch(int batch_size, int iter, bool bootstra
                     pusher1 = ran_tpl(ran);
                     while(acos(tmpl_quats[object][pusher1].toRotationMatrix()(2,2)) - acos(tmpl_quats[object][puller].toRotationMatrix()(2,2)) < 0.2)
                         pusher1 = ran_tpl(ran);
-                    if (inplane) {
-                        triplet.pusher1 = templates[object][pusher1];
-                    } else {
-                        triplet.pusher1 = templates[object][vertex_tmpl[object][getTmplVertex(object,pusher1)]];
-                    }
+                    triplet.pusher1 = templates[object][pusher1];
 
                 // -- if model is normal
                 } else {
                     pusher1 = ran_tpl(ran);
-                    if (inplane) {
-                       while(pusher1 == puller && pusher1 == pusher0) pusher1 = ran_tpl(ran);
-                       triplet.pusher1 = templates[object][pusher1];
-                    } else {
-                        while(getTmplVertex(object, pusher1) == getTmplVertex(object, puller)
-                              && getTmplVertex(object, pusher1) == getTmplVertex(object, pusher0))
-                            pusher1 = ran_tpl(ran);
-                        triplet.pusher1 = templates[object][getTmplVertex(object, pusher1)];
-                    }
+                    while(pusher1 == puller && pusher1 == pusher0) pusher1 = ran_tpl(ran);
+                    triplet.pusher1 = templates[object][pusher1];
                 }
             }
 
@@ -83,12 +70,7 @@ vector<Sample> networkSolver::buildBatch(int batch_size, int iter, bool bootstra
                 // - template from another object
                 pusher2 = ran_obj(ran);  
                 while (pusher2 == object) pusher2 = ran_obj(ran);
-
-                if (inplane) {
-                    triplet.pusher2 = templates[pusher2][ran_tpl(ran)];
-                } else {
-                    triplet.pusher2 = templates[pusher2][vertex_tmpl[object][getTmplVertex(object,ran_tpl(ran))]];
-                }
+                triplet.pusher2 = templates[pusher2][ran_tpl(ran)];
             }
         } else {
             // Pusher 1: random template of the same class
@@ -99,34 +81,19 @@ vector<Sample> networkSolver::buildBatch(int batch_size, int iter, bool bootstra
                 pusher1 = ran_tpl(ran);
                 while(acos(tmpl_quats[object][pusher1].toRotationMatrix()(2,2)) - acos(tmpl_quats[object][puller].toRotationMatrix()(2,2)) < 0.2)
                     pusher1 = ran_tpl(ran);
-                if (inplane) {
-                    triplet.pusher1 = templates[object][pusher1];
-                } else {
-                    triplet.pusher1 = templates[object][vertex_tmpl[object][getTmplVertex(object,pusher1)]];
-                }
+                triplet.pusher1 = templates[object][pusher1];
 
             // - if model is normal
             } else {
                 pusher1 = ran_tpl(ran);
-                if (inplane) {
-                   while(pusher1 == puller && pusher1 == pusher0) pusher1 = ran_tpl(ran);
-                   triplet.pusher1 = templates[object][pusher1];
-                } else {
-                    while(getTmplVertex(object, pusher1) == getTmplVertex(object, puller)
-                          && getTmplVertex(object, pusher1) == getTmplVertex(object, pusher0))
-                        pusher1 = ran_tpl(ran);
-                    triplet.pusher1 = templates[object][getTmplVertex(object, pusher1)];
-                }
+                while(pusher1 == puller && pusher1 == pusher0) pusher1 = ran_tpl(ran);
+                triplet.pusher1 = templates[object][pusher1];
             }
 
             // Pusher 2: random template of a different class
             pusher2 = ran_obj(ran);
             while (pusher2 == object) pusher2 = ran_obj(ran);
-            if (inplane) {
-                triplet.pusher2 = templates[pusher2][ran_tpl(ran)];
-            } else {
-                triplet.pusher2 = templates[pusher2][vertex_tmpl[object][getTmplVertex(object,ran_tpl(ran))]];
-            }
+            triplet.pusher2 = templates[pusher2][ran_tpl(ran)];
         }
 
 #if 0   // Show triplets
@@ -137,7 +104,6 @@ vector<Sample> networkSolver::buildBatch(int batch_size, int iter, bool bootstra
         imshow("pusher2",showRGBDPatch(triplet.pusher2.data,false));
         if (bootstrapping) waitKey();
 #endif
-
         // Store triplet to the batch
         batch.push_back(triplet.anchor);
         batch.push_back(triplet.puller);
@@ -188,7 +154,8 @@ void networkSolver::trainNet(int resume_iter)
     bool bootstrapping = false;
 
     // Compute MaxSimTmpls to build batches
-    computeMaxSimTmpl();
+    if (inplane) { computeMaxSimTmplInplane(); }
+            else { computeMaxSimTmpl(); }
 
     // Perform training
     for (size_t training_round = 0; training_round < num_training_rounds; ++training_round)
@@ -198,7 +165,7 @@ void networkSolver::trainNet(int resume_iter)
             for (size_t iter = 0; iter < epoch_iter; iter++)
             {
                 // Fill current batch
-                batch = buildBatch(batch_size, iter, bootstrapping);
+                batch = buildBatch(batch_size, iter, bootstrapping, triplet_size);
 
                 // Fill linear batch memory with input data in Caffe layout with channel-first and set as network input
                 for (size_t i=0; i < batch.size(); ++i)
@@ -241,8 +208,6 @@ void networkSolver::binarizeNet(int resume_iter)
     solver_param.set_net(network_path + binarization_net_name + ".prototxt");
     caffe::SGDSolver<float> solver(solver_param);
 
-
-
     if (resume_iter > 0) {
         string resume_file = net_name + "_iter_" + to_string(resume_iter) + ".caffemodel";
         solver.net()->CopyTrainedLayersFrom(resume_file.c_str());
@@ -271,7 +236,7 @@ void networkSolver::binarizeNet(int resume_iter)
         for (size_t iter = 0; iter < epoch_iter; iter++)
         {
             // Fill current batch
-            batch = buildBatch(batch_size, iter, false);
+            batch = buildBatch(batch_size, iter, false, triplet_size);
 
             // Fill linear batch memory with input data in Caffe layout with channel-first and set as network input
             for (size_t i=0; i < batch.size(); ++i)
@@ -458,7 +423,7 @@ void networkSolver::readParam(string config)
 
 }
 
-void networkSolver::computeMaxSimTmpl()
+void networkSolver::computeMaxSimTmplInplane()
 {
     // Calculate maxSimTmpl: find the 2 most similar templates for each object in the training set
     maxSimTmpl.assign(nr_objects, vector<vector<int>>(nr_training_poses, vector<int>()));
@@ -478,30 +443,19 @@ void networkSolver::computeMaxSimTmpl()
                 best_dist = temp_dist;
                 sim_tmpl = tmpl_pose;
             }
-
             // - push back the template
-            if (inplane) {
-                maxSimTmpl[object][training_pose].push_back(sim_tmpl);
-            } else {
-                maxSimTmpl[object][training_pose].push_back(vertex_tmpl[object][getTmplVertex(object,sim_tmpl)]);
-            }
+            maxSimTmpl[object][training_pose].push_back(sim_tmpl);
 
             // - find the second most similar template
             for (size_t tmpl_pose = 0; tmpl_pose < nr_template_poses; tmpl_pose++)
             {
                 float temp_dist = training_quats[object][training_pose].angularDistance(tmpl_quats[object][tmpl_pose]);
-                if (!inplane && getTmplVertex(object,tmpl_pose) == getTmplVertex(object,sim_tmpl)) continue;
                 if (temp_dist >= best_dist2 || temp_dist == best_dist) continue;
                 best_dist2 = temp_dist;
                 sim_tmpl2 = tmpl_pose;
             }
-
             // - push back the template
-            if (inplane) {
-                maxSimTmpl[object][training_pose].push_back(sim_tmpl2);
-            } else {
-                maxSimTmpl[object][training_pose].push_back(vertex_tmpl[object][getTmplVertex(object,sim_tmpl2)]);
-            }
+            maxSimTmpl[object][training_pose].push_back(sim_tmpl2);
 
 #if 0
             imshow("query",showRGBDPatch(training_set[object][training_pose].data,false));
@@ -513,6 +467,61 @@ void networkSolver::computeMaxSimTmpl()
     }
 }
 
+void networkSolver::computeMaxSimTmpl()
+{
+    // Calculate maxSimTmpl: find the 2 most similar templates for each object in the training set
+    maxSimTmpl.assign(nr_objects, vector<vector<int>>(nr_training_poses, vector<int>()));
+    for (size_t object = 0; object < nr_objects; ++object)
+    {
+        for (size_t training_pose = 0; training_pose < nr_training_poses; ++training_pose)
+        {
+            float best_dist = numeric_limits<float>::min();
+            float best_dist2 = numeric_limits<float>::min(); // second best
+            int sim_tmpl, sim_tmpl2;
+            Vector3f training_tr(3), tmpl_tr(3);
 
+            for (size_t tr = 0; tr < 3; ++tr)
+                training_tr[tr] = training_set[object][training_pose].label.at<float>(0,5+tr);
+
+            // - find the first most similar template
+            for (size_t tmpl_pose = 0; tmpl_pose < nr_template_poses; tmpl_pose++)
+            {
+                for (size_t tr = 0; tr < 3; ++tr)
+                    tmpl_tr[tr] = templates[object][tmpl_pose].label.at<float>(0,5+tr);
+
+                float temp_dist = training_tr.dot(tmpl_tr);
+                if (temp_dist <= best_dist) continue;
+                best_dist = temp_dist;
+                sim_tmpl = tmpl_pose;
+            }
+
+            // - push back the template
+                maxSimTmpl[object][training_pose].push_back(sim_tmpl);
+
+
+            // - find the second most similar template
+            for (size_t tmpl_pose = 0; tmpl_pose < nr_template_poses; tmpl_pose++)
+            {
+                for (size_t tr = 0; tr < 3; ++tr)
+                    tmpl_tr[tr] = templates[object][tmpl_pose].label.at<float>(0,5+tr);
+
+                float temp_dist = training_tr.dot(tmpl_tr);
+                if (temp_dist <= best_dist2 || temp_dist == best_dist) continue;
+                best_dist2 = temp_dist;
+                sim_tmpl2 = tmpl_pose;
+            }
+
+            // - push back the template
+                maxSimTmpl[object][training_pose].push_back(sim_tmpl2);
+
+#if 0
+            imshow("query",showRGBDPatch(training_set[object][training_pose].data,false));
+            imshow("sim 1",showRGBDPatch(templates[object][maxSimTmpl[object][training_pose][0]].data,false));
+            imshow("sim 2",showRGBDPatch(templates[object][maxSimTmpl[object][training_pose][1]].data,false));
+            waitKey();
+#endif
+        }
+    }
+}
 
 
