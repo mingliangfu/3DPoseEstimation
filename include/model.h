@@ -57,7 +57,6 @@ public:
     vector<Vector3f> m_subpoints, m_subnormals;
     vector<Vec3b> m_subcolors;
 
-    
 private:
 
     // Length of voxel [m] for subsampling.

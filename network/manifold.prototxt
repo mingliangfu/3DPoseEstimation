@@ -1,7 +1,7 @@
 name: "MANIFOLD"
 
 input: "data"
-input_shape{dim: 128 dim: 4 dim: 64 dim: 64}
+input_shape{dim: 330 dim: 4 dim: 64 dim: 64}
 
 layer {
   name: "conv1"
@@ -106,5 +106,66 @@ layer {
     bias_filler { type: "constant" }
   }
 }
+
+
+layer {
+  name: "slicer"
+  type: "Slice"
+  bottom: "ip2"
+  top: "feat_triplets"
+  top: "feat_pairs"
+  slice_param {
+    axis: 0     
+    slice_point: 198
+  }
+  include {phase: TRAIN}
+}
+
+layer {
+  name: "slicer"
+  type: "Slice"
+  bottom: "ip2"
+  top: "label_triplets"
+  top: "label_pairs"
+  slice_param {
+    axis: 0     
+    slice_point: 198
+  }
+  include {phase: TRAIN}
+}
+
+layer {
+  name: "tripletLoss"
+  type: "TripletLoss"
+  bottom: "feat_triplets"
+  bottom: "label_triplets"
+  top: "loss1"
+  triplet_loss_param{
+    margin: 0.1
+    losstype: 1
+    num_negatives: 1
+    use_pair: 0
+  }
+  include {phase: TRAIN}
+}
+
+
+layer {
+  name: "pairLoss"
+  type: "TripletLoss"
+  bottom: "feat_pairs"
+  bottom: "label_pairs"
+  top: "loss2"
+  triplet_loss_param{
+    margin: 0.1
+    losstype: 1
+    num_negatives: 0
+    use_pair: 1
+  }
+  include {phase: TRAIN}
+}
+
+
+
 
 

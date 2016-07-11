@@ -118,6 +118,7 @@ layer {
     axis: 0     
     slice_point: 198
   }
+  include{phase: TRAIN}
 }
 
 layer {
@@ -144,6 +145,7 @@ layer {
     num_negatives: 1
     use_pair: 0
   }
+  include{phase: TRAIN}
 }
 
 
@@ -159,6 +161,7 @@ layer {
     num_negatives: 0
     use_pair: 1
   }
+  include{phase: TRAIN}
 }
 
 layer {
@@ -166,6 +169,7 @@ layer {
   type: “BinarizationLoss"
   bottom: “ip2”
   top: "loss3”
+  include{phase: TRAIN}
 }
 
 
