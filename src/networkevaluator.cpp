@@ -86,6 +86,65 @@ void networkEvaluator::visualizeManifold(caffe::Net<float> &CNN, const vector<ve
     visualizer.saveScreenshot("manifold_" + to_string(iter) + ".png");
 }
 
+void networkEvaluator::visualizeKNN(caffe::Net<float> &CNN, const vector<vector<Sample>> &test_set, const vector<vector<Sample>> &templates)
+{
+    // Get the test data: subset of the used_models
+    Mat DBfeats, DBtest;
+    std::random_device ran;
+
+    for (int obj = 0; obj < test_set.size(); ++obj) {
+        DBtest.push_back(computeDescriptors(CNN, test_set[obj]));
+        DBfeats.push_back(computeDescriptors(CNN, templates[obj]));
+    }
+
+    // Create a k-NN matcher
+    cv::Ptr<DescriptorMatcher> matcher = DescriptorMatcher::create("FlannBased");
+    matcher->add(DBfeats);
+
+    // Enter the infinite loop
+    while (true)
+    {
+        // - get the random index for the query object
+        uniform_int_distribution<size_t> DBtestGen(0, DBtest.rows - 1);
+        int DBtestId = DBtestGen(ran);
+        Mat testDescr = DBtest.row(DBtestId).clone();
+
+        // - match the DBtest
+        vector< vector<DMatch> > matches;
+        int knn = 5;
+        matcher->knnMatch(testDescr, matches, knn);
+
+        // - get the test set indices (1D -> 2D)
+        int query_object = DBtestId / test_set[0].size();
+        int query_sample = DBtestId % test_set[0].size();
+
+        // - show the query object
+        imshow("query",showRGBDPatch(test_set[query_object][query_sample].data,false));
+
+        for (DMatch &m : matches[0])
+        {
+            // - get the template set indices (1D -> 2D)
+            int tmpl_object = m.trainIdx / templates[0].size();
+            int tmpl_sample = m.trainIdx % templates[0].size();
+
+            // - show the k-NN object
+            imshow("kNN",showRGBDPatch(templates[tmpl_object][tmpl_sample].data,false));
+
+            // - get the quaternions of the compared objects
+            Quaternionf queryQuat, kNNQuat;
+            for (int i = 0; i < 4; ++i)
+            {
+                queryQuat.coeffs()(i) = test_set[query_object][query_sample].label.at<float>(0,1+i);
+                kNNQuat.coeffs()(i) = templates[tmpl_object][tmpl_sample].label.at<float>(0,1+i);
+            }
+
+            // - compute angular difference
+            bool object_match = (test_set[query_object][query_sample].label.at<float>(0,0) == templates[tmpl_object][tmpl_sample].label.at<float>(0,0));
+            cout << "Object match: " << object_match << "; Angular difference: " << queryQuat.angularDistance(kNNQuat)*180.f/M_PI << endl;
+            waitKey();
+        }
+    }
+}
 
 void networkEvaluator::computeKNNAccuracy(vector<vector<vector<int>>> &maxSimTmpl, vector<vector<vector<int>>> &maxSimKNNTmpl)
 {
@@ -111,76 +170,120 @@ void networkEvaluator::computeKNNAccuracy(vector<vector<vector<int>>> &maxSimTmp
     cout << "Inter-class accuracy: " << inter/(float)(nr_objects*nr_training_poses)*100 << endl;
 }
 
-void networkEvaluator::computeHistogram(caffe::Net<float> &CNN, const vector<vector<Sample>> &templates, const vector<vector<Sample>> &training_set, const vector<vector<Sample>> &test_set, vector<int> rotInv)
+void networkEvaluator::computeHistogram(caffe::Net<float> &CNN, const vector<vector<Sample>> &templates, const vector<vector<Sample>> &training_set, const vector<vector<Sample>> &test_set, vector<int> rotInv, string config, int iter)
 {
     // Get the test data
-    Mat DBfeats, DBtest;
-    vector<Sample> test, tmpl;
+     Mat DBfeats, DBtest;
+     int nr_test_poses = test_set[0].size();
+     int nr_tmpl_poses = templates[0].size();
 
-    for (size_t object = 0; object < templates.size(); ++object) {
-        DBfeats.push_back(computeDescriptors(CNN, templates[object]));
-        DBtest.push_back(computeDescriptors(CNN, test_set[object]));
-        for (Sample s : test_set[object]) test.push_back(s);
-        for (Sample s : templates[object]) tmpl.push_back(s);
-    }
+     for (size_t object = 0; object < templates.size(); ++object) {
+         DBfeats.push_back(computeDescriptors(CNN, templates[object]));
+         DBtest.push_back(computeDescriptors(CNN, test_set[object]));
+     }
 
-    // Create a k-NN matcher
-    cv::Ptr<DescriptorMatcher> matcher;
-    matcher = DescriptorMatcher::create("BruteForce");
-    matcher->add(DBfeats);
+     // Create a k-NN matcher
+     cv::Ptr<DescriptorMatcher> matcher;
+     vector< vector<DMatch> > matches;
+     matcher = DescriptorMatcher::create("BruteForce");
+     matcher->add(DBfeats);
+     int knn = 1;
+     matcher->knnMatch(DBtest, matches, knn);
 
-    vector< vector<DMatch> > matches;
-    int knn = 1;
-    matcher->knnMatch(DBtest, matches, knn);
+     vector<float> bins = {-1, 0, 10, 20, 40, 180};
+     vector<float> histo(bins.size(), 0);
+     float mean_angle = 0;
 
-    vector<float> bins = {-1, 5, 20, 40, 180};
-    vector<float> histo(bins.size(), 0);
+     for (size_t linearId = 0; linearId < (unsigned)DBtest.rows; ++linearId) {
 
-    for (int i=0; i < DBtest.rows; ++i)
-        for (DMatch &m : matches[i])
-        {
-            Mat query = showRGBDPatch(test[m.queryIdx].data, false);
-            Mat nn = showRGBDPatch(tmpl[m.trainIdx].data, false);
-            // cerr << DBtest.row(m.queryIdx) << endl;
-            // cerr << DBfeats.row(m.trainIdx) << endl;
-            imshow("query",query); imshow("nn", nn); waitKey();
+         // - get the test set indices (1D -> 2D)
+         int query_object = linearId / nr_test_poses;
+         int query_pose = linearId % nr_test_poses;
 
-            // If objects are different fill the first bin
-            if (test[m.queryIdx].label.at<float>(0,0) != tmpl[m.trainIdx].label.at<float>(0,0))
-            {
-                histo[0]++;
-                continue;
-            }
+         for (int nn = 0; nn < knn; nn++)
+         {
+             int knn_object =  matches[linearId][nn].trainIdx / nr_tmpl_poses;
+             int knn_pose =  matches[linearId][nn].trainIdx % nr_tmpl_poses;
+#if 0
+             imshow("query",showRGBDPatch(test_set[query_object][query_pose].data,false));
+             imshow("KNN",showRGBDPatch(templates[knn_object][knn_pose].data,false));
+             waitKey();
+#endif
 
-            // Get the quaternions
-            Quaternionf sampleQuat, kNNQuat;
-            for (int q = 0; q < 4; ++q)
-            {
-                sampleQuat.coeffs()(q) = test[m.queryIdx].label.at<float>(0,1+q);
-                kNNQuat.coeffs()(q) = tmpl[m.trainIdx].label.at<float>(0,1+q);
-            }
+             // If objects are different fill the first bin
+             if (test_set[query_object][query_pose].label.at<float>(0,0) != templates[knn_object][knn_pose].label.at<float>(0,0))
+             { histo[0]++; continue; }
 
-            // Angular difference
-            float diff;
-            // If object is normal compare angular distance, else elevation level
-            if(rotInv[test[m.queryIdx].label.at<float>(0,0)] == 0) {
-                diff = sampleQuat.angularDistance(kNNQuat)*180.f/M_PI;
-            } else {
-                diff = abs(acos(sampleQuat.toRotationMatrix()(2,2)) - acos(kNNQuat.toRotationMatrix()(2,2)))*180.f/M_PI;
-            }
+             // Get the quaternions
+             Quaternionf query_quat, knn_quat;
+             for (int q = 0; q < 4; ++q) {
+                 query_quat.coeffs()(q) = test_set[query_object][query_pose].label.at<float>(0,1+q);
+                 knn_quat.coeffs()(q) = templates[knn_object][knn_pose].label.at<float>(0,1+q);
+             }
 
-            for (size_t b = 1; b < bins.size(); ++b)
-                if (diff < bins[b])
-                {
-                    histo[b]++;
-                    break;
-                }
-        }
+             // Angular difference
+             float diff;
+             // If object is normal compare angular distance, else elevation level
+             if(rotInv[test_set[query_object][query_pose].label.at<float>(0,0)] == 0) {
+                 diff = query_quat.angularDistance(knn_quat)*180.f/M_PI;
+             } else {
+                 diff = abs(acos(query_quat.toRotationMatrix()(2,2)) - acos(knn_quat.toRotationMatrix()(2,2)))*180.f/M_PI;
+             }
+             mean_angle += diff;
 
-    float total=0;
-    for (float &i : histo) total += i;
-    for (float &i : histo) i /= total;
-    for (size_t i=0; i < histo.size(); ++i)
-        clog << i << " " << histo[i] << endl;
+             // Exact match?
+             Quaternionf tmpl_quat;
+             bool exact_match = true;
+             for (int tmpl_pose = 0; tmpl_pose < nr_tmpl_poses; ++tmpl_pose) {
+                 for (int q = 0; q < 4; ++q)
+                     tmpl_quat.coeffs()(q) = templates[knn_object][tmpl_pose].label.at<float>(0,1+q);
+                 if (query_quat.angularDistance(tmpl_quat) < query_quat.angularDistance(knn_quat))
+                     exact_match = false;
+             }
+             if (exact_match) histo[1]++;
 
+
+             for (size_t b = 2; b < bins.size(); ++b) {
+                 if (diff < bins[b])
+                 {
+                     histo[b]++;
+                 }
+             }
+         }
+     }
+
+     mean_angle /= DBtest.rows;
+
+     float total = histo.front() + histo.back();
+     for (float &i : histo) i /= total;
+
+     // Write stats to the file
+
+     // - set the file name
+     // -- initialize the parser
+     boost::property_tree::ptree pt;
+     boost::property_tree::ini_parser::read_ini(config, pt);
+
+     // -- read learning parameters
+     bool use_real = pt.get<bool>("input.use_real");
+     bool random_background = pt.get<bool>("input.random_background");
+     string rb = random_background ? "_rb" : "";
+     string train_data = use_real ? "_real+synth" : "_synth";
+     string net_name = pt.get<string>("train.net_name");
+     vector<string> used_models = to_array<string>(pt.get<string>("input.used_models"));
+     string eval_name = "eval_" + to_string(used_models.size())+ "_" + net_name + train_data + rb +".log";
+
+     ofstream stat_file;
+     stat_file.open(eval_name, std::ios_base::app);
+
+     stat_file << "Iteration: " << iter << endl;
+     for (size_t i = 0; i < histo.size(); ++i)
+         stat_file << "<" << bins[i] << "\t";
+     stat_file << "mean" << endl;
+
+     for (size_t i = 0; i < histo.size(); ++i)
+         stat_file << std::setprecision(3) << histo[i]*100 << "\t";
+     stat_file << mean_angle << endl;
+
+     stat_file.close();
 }

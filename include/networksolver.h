@@ -29,12 +29,12 @@ class networkSolver
 {
 public:
     networkSolver(string config, datasetManager *db);
-    vector<Sample> buildBatch(int batch_size, int iter, bool bootstrapping, unsigned int triplet_size);
+    vector<Sample> buildBatch(int batch_size, unsigned int triplet_size, int iter, bool bootstrapping);
     void trainNet(int resume_iter=0);
     void binarizeNet(int resume_iter=0);
 
-    void computeKNN(caffe::Net<float> &CNN);
-    void visualizeKNN(caffe::Net<float> &CNN, vector<string> test_models);
+    bool computeKNN(caffe::Net<float> &CNN);
+    void visualizeKNN(caffe::Net<float> &CNN, vector<string> test_models, const vector<vector<Sample> > &test_set, const vector<vector<Sample> > &templates);
     bool bootstrap(caffe::Net<float> &CNN, int iter);
 
     void readParam(string config);
@@ -57,9 +57,9 @@ public:
     vector<string> used_models, models;
     unsigned int num_epochs, num_training_rounds, binarization_epochs;
     unsigned int step_size;
-    string network_path, net_name, learning_policy, binarization_net_name;
+    string config, network_path, net_name, learning_policy, binarization_net_name;
     float learning_rate, momentum, weight_decay, gamma;
-    bool gpu, binarization, inplane;
+    bool gpu, binarization, inplane, random_background;
 };
 
 #endif // NETWORKSOLVER_H

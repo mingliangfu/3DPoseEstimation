@@ -2,13 +2,14 @@
 
 networkSolver::networkSolver(string config, datasetManager* db): db(db), templates(db->getTemplateSet()), training_set(db->getTrainingSet()),
                                                                  test_set(db->getTestSet()), tmpl_quats(db->getTmplQuats()),
-                                                                 training_quats(db->getTrainingQuats()), test_quats(db->getTestQuats())
+                                                                 training_quats(db->getTrainingQuats()), test_quats(db->getTestQuats()),
+                                                                 config(config)
 {
     // Read config parameters
     readParam(config);
 }
 
-vector<Sample> networkSolver::buildBatch(int batch_size, int iter, bool bootstrapping, unsigned int triplet_size)
+vector<Sample> networkSolver::buildBatch(int batch_size, unsigned int triplet_size, int iter, bool bootstrapping)
 {
     vector<Sample> batch;
     size_t puller = 0, pusher0 = 0, pusher1 = 0, pusher2 = 0;
@@ -24,13 +25,14 @@ vector<Sample> networkSolver::buildBatch(int batch_size, int iter, bool bootstra
         unsigned int object = linearId % nr_objects;
 
         // Anchor: training set sample
-        triplet.anchor = training_set[object][training_pose];
+        triplet.anchor.copySample(training_set[object][training_pose]);
         // Puller: most similar template
         puller = maxSimTmpl[object][training_pose][0];
-        triplet.puller = templates[object][puller];
+        triplet.puller.copySample(templates[object][puller]);
+
         // Pusher 0: second most similar template
         pusher0 = maxSimTmpl[object][training_pose][1];
-        triplet.pusher0 = templates[object][pusher0];
+        triplet.pusher0.copySample(templates[object][pusher0]);
 
         if (bootstrapping)
         {
@@ -40,7 +42,7 @@ vector<Sample> networkSolver::buildBatch(int batch_size, int iter, bool bootstra
 
             if (knn_object != object || knn_pose != puller) {
                 // - missclassified nearest neighbor
-                triplet.pusher1 = templates[knn_object][knn_pose];
+                triplet.pusher1.copySample(templates[knn_object][knn_pose]);
             } else {
                 // - random template of the same class
                 // -- if model is rotInv or symmetric
@@ -50,13 +52,13 @@ vector<Sample> networkSolver::buildBatch(int batch_size, int iter, bool bootstra
                     pusher1 = ran_tpl(ran);
                     while(acos(tmpl_quats[object][pusher1].toRotationMatrix()(2,2)) - acos(tmpl_quats[object][puller].toRotationMatrix()(2,2)) < 0.2)
                         pusher1 = ran_tpl(ran);
-                    triplet.pusher1 = templates[object][pusher1];
+                    triplet.pusher1.copySample(templates[object][pusher1]);
 
                 // -- if model is normal
                 } else {
                     pusher1 = ran_tpl(ran);
                     while(pusher1 == puller && pusher1 == pusher0) pusher1 = ran_tpl(ran);
-                    triplet.pusher1 = templates[object][pusher1];
+                    triplet.pusher1.copySample(templates[object][pusher1]);
                 }
             }
 
@@ -65,12 +67,12 @@ vector<Sample> networkSolver::buildBatch(int batch_size, int iter, bool bootstra
                 // - missclassified knn of a different object
                 knn_object = maxSimKNNTmpl[object][training_pose][2];
                 knn_pose = maxSimKNNTmpl[object][training_pose][3];
-                triplet.pusher2 = templates[knn_object][knn_pose];
+                triplet.pusher2.copySample(templates[knn_object][knn_pose]);
             } else {
                 // - template from another object
                 pusher2 = ran_obj(ran);  
                 while (pusher2 == object) pusher2 = ran_obj(ran);
-                triplet.pusher2 = templates[pusher2][ran_tpl(ran)];
+                triplet.pusher2.copySample(templates[pusher2][ran_tpl(ran)]);
             }
         } else {
             // Pusher 1: random template of the same class
@@ -81,20 +83,35 @@ vector<Sample> networkSolver::buildBatch(int batch_size, int iter, bool bootstra
                 pusher1 = ran_tpl(ran);
                 while(acos(tmpl_quats[object][pusher1].toRotationMatrix()(2,2)) - acos(tmpl_quats[object][puller].toRotationMatrix()(2,2)) < 0.2)
                     pusher1 = ran_tpl(ran);
-                triplet.pusher1 = templates[object][pusher1];
+                triplet.pusher1.copySample(templates[object][pusher1]);
 
             // - if model is normal
             } else {
                 pusher1 = ran_tpl(ran);
                 while(pusher1 == puller && pusher1 == pusher0) pusher1 = ran_tpl(ran);
-                triplet.pusher1 = templates[object][pusher1];
+                triplet.pusher1.copySample(templates[object][pusher1]);
             }
 
             // Pusher 2: random template of a different class
             pusher2 = ran_obj(ran);
             while (pusher2 == object) pusher2 = ran_obj(ran);
-            triplet.pusher2 = templates[pusher2][ran_tpl(ran)];
+            triplet.pusher2.copySample(templates[pusher2][ran_tpl(ran)]);
         }
+
+        if (random_background) {
+            db->randomBGFill(triplet.anchor.data);
+            db->randomBGFill(triplet.puller.data);
+            db->randomBGFill(triplet.pusher0.data);
+            db->randomBGFill(triplet.pusher1.data);
+            db->randomBGFill(triplet.pusher2.data);
+        }
+
+        // Store triplet to the batch
+        batch.push_back(triplet.anchor);
+        batch.push_back(triplet.puller);
+        batch.push_back(triplet.pusher0);
+        batch.push_back(triplet.pusher1);
+        batch.push_back(triplet.pusher2);
 
 #if 0   // Show triplets
         imshow("anchor",showRGBDPatch(triplet.anchor.data,false));
@@ -102,14 +119,9 @@ vector<Sample> networkSolver::buildBatch(int batch_size, int iter, bool bootstra
         imshow("pusher0",showRGBDPatch(triplet.pusher0.data,false));
         imshow("pusher1",showRGBDPatch(triplet.pusher1.data,false));
         imshow("pusher2",showRGBDPatch(triplet.pusher2.data,false));
-        if (bootstrapping) waitKey();
+        waitKey();
 #endif
-        // Store triplet to the batch
-        batch.push_back(triplet.anchor);
-        batch.push_back(triplet.puller);
-        batch.push_back(triplet.pusher0);
-        batch.push_back(triplet.pusher1);
-        batch.push_back(triplet.pusher2);
+
     }
     return batch;
 }
@@ -129,14 +141,16 @@ void networkSolver::trainNet(int resume_iter)
     solver_param.set_display(1);
     solver_param.set_net(network_path + net_name + ".prototxt");
     caffe::SGDSolver<float> solver(solver_param);
+    bool bootstrapping = false;
+
+    // Store the test network
+    caffe::Net<float> testCNN(network_path + net_name + ".prototxt", caffe::TEST);
 
     if (resume_iter > 0) {
         string resume_file = net_name + "_iter_" + to_string(resume_iter) + ".solverstate";
         solver.Restore(resume_file.c_str());
+        bootstrapping = computeKNN(testCNN);
     }
-
-    // Store the test network
-    caffe::Net<float> testCNN(network_path + net_name + ".prototxt", caffe::TEST);
 
     // Get network information
     boost::shared_ptr<caffe::Net<float> > net = solver.net();
@@ -151,7 +165,6 @@ void networkSolver::trainNet(int resume_iter)
     vector<Sample> batch;
     unsigned int triplet_size = 5;
     unsigned int epoch_iter = nr_objects * nr_training_poses / (batch_size/triplet_size);
-    bool bootstrapping = false;
 
     // Compute MaxSimTmpls to build batches
     if (inplane) { computeMaxSimTmplInplane(); }
@@ -165,7 +178,7 @@ void networkSolver::trainNet(int resume_iter)
             for (size_t iter = 0; iter < epoch_iter; iter++)
             {
                 // Fill current batch
-                batch = buildBatch(batch_size, iter, bootstrapping, triplet_size);
+                batch = buildBatch(batch_size, triplet_size, iter, bootstrapping);
 
                 // Fill linear batch memory with input data in Caffe layout with channel-first and set as network input
                 for (size_t i=0; i < batch.size(); ++i)
@@ -184,9 +197,23 @@ void networkSolver::trainNet(int resume_iter)
 
         // Do bootstraping
         solver.Snapshot();
-        int snapshot_iter = epoch_iter * num_epochs * (training_round + 1);
+        int snapshot_iter = epoch_iter * num_epochs * (training_round + 1) + resume_iter;
         testCNN.CopyTrainedLayersFrom(net_name + "_iter_" + to_string(snapshot_iter) + ".caffemodel");
-        bootstrapping = bootstrap(testCNN, snapshot_iter);
+
+        if (random_background) {
+            vector<vector<Sample>> copy_tmpl(templates.size(), vector<Sample>(templates[0].size()));
+            for (int object = 0; object < templates.size(); ++object) {
+                for (int pose = 0; pose < templates[0].size(); ++pose) {
+                    copy_tmpl[object][pose].copySample(templates[object][pose]);
+                    db->randomBGFill(copy_tmpl[object][pose].data);
+                }
+            }
+            eval::computeHistogram(testCNN, copy_tmpl, training_set, test_set, rotInv, config, snapshot_iter);
+            eval::computeHistogram(testCNN, templates, training_set, test_set, rotInv, config, snapshot_iter);
+        } else {
+            eval::computeHistogram(testCNN, templates, training_set, test_set, rotInv, config, snapshot_iter);
+        }
+        bootstrapping = computeKNN(testCNN);
     }
     clog << "Training finished!" << endl;
 }
@@ -256,18 +283,8 @@ void networkSolver::binarizeNet(int resume_iter)
     clog << "Binarization training finished!" << endl;
 }
 
-bool networkSolver::bootstrap(caffe::Net<float> &CNN, int iter)
-{
-    clog << "Bootstrapping: " << endl;
-    clog << " - save the manifold png" << endl;
-    eval::visualizeManifold(CNN, templates, iter);
-    clog << " - save k-NN for all the training samples" << endl;
-    computeKNN(CNN);
-    return true;
-}
 
-
-void networkSolver::computeKNN(caffe::Net<float> &CNN)
+bool networkSolver::computeKNN(caffe::Net<float> &CNN)
 {
     // Get the training data
     Mat DBfeats, DBtraining;
@@ -319,68 +336,6 @@ void networkSolver::computeKNN(caffe::Net<float> &CNN)
     }
 }
 
-void networkSolver::visualizeKNN(caffe::Net<float> &CNN, vector<string> test_models)
-{
-    // Get the test data: subset of the used_models
-    Mat DBfeats, DBtest;
-    vector<int> global_object_id;
-    for (string &seq : test_models)
-    {
-        DBtest.push_back(eval::computeDescriptors(CNN, test_set[model_index[seq]]));
-        DBfeats.push_back(eval::computeDescriptors(CNN, templates[model_index[seq]]));
-        global_object_id.push_back(model_index[seq]);
-    }
-
-    // Create a k-NN matcher
-    cv::Ptr<DescriptorMatcher> matcher = DescriptorMatcher::create("FlannBased");
-    matcher->add(DBfeats);
-
-    // Enter the infinite loop
-    while(true)
-    {
-        // - get the random index for the query object
-        uniform_int_distribution<size_t> DBtestGen(0, DBtest.rows - 1);
-        int DBtestId = DBtestGen(ran);
-        cout << DBtestId << endl;
-        Mat testDescr = DBtest.row(DBtestId).clone();
-
-        // - match the DBtest
-        vector< vector<DMatch> > matches;
-        int knn = 5;
-        matcher->knnMatch(testDescr, matches, knn);
-
-        // - get the test set indices (1D -> 2D)
-        int query_object = global_object_id[DBtestId / test_set[0].size()];
-        int query_sample = DBtestId % test_set[0].size();
-
-        // - show the query object
-        imshow("query",showRGBDPatch(test_set[query_object][query_sample].data,false));
-
-        for (DMatch &m : matches[0])
-        {
-            // - get the template set indices (1D -> 2D)
-            int tmpl_object = global_object_id[m.trainIdx / templates[0].size()];
-            int tmpl_sample = m.trainIdx % templates[0].size();
-
-            // - show the k-NN object
-            imshow("kNN",showRGBDPatch(templates[tmpl_object][tmpl_sample].data,false));
-
-            // - get the quaternions of the compared objects
-            Quaternionf queryQuat, kNNQuat;
-            for (int i=0; i < 4; ++i)
-            {
-                queryQuat.coeffs()(i) = test_set[query_object][query_sample].label.at<float>(0,1+i);
-                kNNQuat.coeffs()(i) = templates[tmpl_object][tmpl_sample].label.at<float>(0,1+i);
-            }
-
-            // - compute angular difference
-            bool object_match = (test_set[query_object][query_sample].label.at<float>(0,0) == templates[tmpl_object][tmpl_sample].label.at<float>(0,0));
-            cout << "Object match: " << object_match << "; Angular difference: " << queryQuat.angularDistance(kNNQuat)*180.f/M_PI << endl;
-            waitKey();
-        }
-    }
-}
-
 void networkSolver::readParam(string config)
 {
     // Initialize the parser
@@ -405,6 +360,7 @@ void networkSolver::readParam(string config)
     binarization_net_name = pt.get<string>("train.binarization_net_name");
     rotInv = to_array<int>(pt.get<string>("input.rotInv"));
     inplane = pt.get<bool>("input.inplane");
+    random_background = pt.get<bool>("input.random_background");
 
     if (gpu) caffe::Caffe::set_mode(caffe::Caffe::GPU);
     used_models = to_array<string>(pt.get<string>("input.used_models"));
@@ -443,6 +399,7 @@ void networkSolver::computeMaxSimTmplInplane()
                 best_dist = temp_dist;
                 sim_tmpl = tmpl_pose;
             }
+
             // - push back the template
             maxSimTmpl[object][training_pose].push_back(sim_tmpl);
 
@@ -454,6 +411,7 @@ void networkSolver::computeMaxSimTmplInplane()
                 best_dist2 = temp_dist;
                 sim_tmpl2 = tmpl_pose;
             }
+
             // - push back the template
             maxSimTmpl[object][training_pose].push_back(sim_tmpl2);
 
@@ -523,5 +481,3 @@ void networkSolver::computeMaxSimTmpl()
         }
     }
 }
-
-

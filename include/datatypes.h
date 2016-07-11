@@ -32,9 +32,20 @@ struct Benchmark
     Matrix3f cam;
 };
 
+struct Background
+{
+    Mat color, depth, normals;
+};
+
+
 struct Sample
 {
     Mat data, label;
+    void copySample(Sample sample)
+    {
+        sample.data.copyTo(this->data);
+        this->label = sample.label;
+    }
 };
 
 struct Triplet

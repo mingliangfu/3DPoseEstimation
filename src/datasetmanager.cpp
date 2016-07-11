@@ -6,8 +6,10 @@ datasetManager::datasetManager(string config)
     boost::property_tree::ini_parser::read_ini(config, pt);
     dataset_path = pt.get<string>("paths.dataset_path");
     hdf5_path = pt.get<string>("paths.hdf5_path");
+    bg_path = pt.get<string>("paths.background_path");
 
     random_background = pt.get<bool>("input.random_background");
+    use_real = pt.get<bool>("input.use_real");
     inplane = pt.get<bool>("input.inplane");
     models = to_array<string>(pt.get<string>("input.models"));
     used_models = to_array<string>(pt.get<string>("input.used_models"));
@@ -46,15 +48,15 @@ Benchmark datasetManager::loadLinemodBenchmark(string linemod_path, string seque
     if (count>-1) last = count;
 
     Benchmark bench;
-    for (int i=0; i <= last;i++)
+    for (int i = 0; i <= last;i++)
     {
         Frame frame;
         frame.nr = i;
-        frame.color = imread(dir_string + "/color"+to_string(i)+".jpg");
-        frame.depth = imread(dir_string + "/inp/depth"+to_string(i)+".png",-1);
+        frame.color = imread(dir_string + "/color" + to_string(i) + ".jpg");
+        frame.depth = imread(dir_string + "/inp/depth" + to_string(i) + ".png",-1);
         assert(!frame.color.empty() && !frame.depth.empty());
         frame.depth.convertTo(frame.depth,CV_32F,0.001f);   // Bring depth map into meters
-        ifstream pose(dir_string + "/pose"+to_string(i)+".txt");
+        ifstream pose(dir_string + "/pose" + to_string(i) + ".txt");
         assert(pose.is_open());
         for (int k=0; k < 4;k++)
             for(int l=0; l < 4;l++)
@@ -125,6 +127,61 @@ Benchmark datasetManager::loadBigBirdBenchmark(string linemod_path, string seque
     return bench;
 }
 
+vector<Background> datasetManager::loadBackgrounds(string backgrounds_path, int count /*=-1*/)
+{
+
+    filesystem::path dir(backgrounds_path);
+    if (!(filesystem::exists(dir) && filesystem::is_directory(dir)))
+    {
+        cout << "Could not open data in " << backgrounds_path << ". Aborting..." << endl;
+        return vector<Background>();
+    }
+    int last=0;
+    filesystem::directory_iterator end_iter;
+    for(filesystem::directory_iterator dir_iter(dir); dir_iter != end_iter ; ++dir_iter)
+        if (filesystem::is_regular_file(dir_iter->status()) )
+        {
+            string file = dir_iter->path().leaf().string();
+            if (file.substr(0,6)=="color_")
+                last = std::max(last,std::stoi(file.substr(6,file.length())));
+        }
+
+    if (count>-1) last = count;
+
+    vector<Background> bgs;
+    for (int i = 0; i <= last; i++)
+    {
+        Background bg;
+        stringstream countf;
+        countf << setw(4) << setfill('0') << to_string(i);
+        bg.color = imread(backgrounds_path + "color_"  + countf.str() + ".png");
+        bg.depth = imread(backgrounds_path + "depth_" + countf.str() + ".png",-1);
+        assert(!bg.color.empty() && !bg.depth.empty());
+        bg.depth.convertTo(bg.depth,CV_32F,0.001f);   // Bring depth map into meters
+//        imshow("Color: ", bg.color);
+//        imshow("Depth: ", bg.depth); waitKey();
+
+        // Filter depth
+        Mat depth_mini(bg.depth.size().height, bg.depth.size().width, CV_8UC1);
+        bg.depth.convertTo(depth_mini, CV_8UC1, 255.0);
+        resize(depth_mini, depth_mini, Size(), 0.2, 0.2);
+        cv::inpaint(depth_mini, (depth_mini == 0.0), depth_mini, 5.0, INPAINT_TELEA);
+        resize(depth_mini, depth_mini, bg.depth.size());
+        depth_mini.convertTo(depth_mini, CV_32FC1, 1./255.0);
+        depth_mini.copyTo(bg.depth, (bg.depth == 0));
+        // medianBlur(bg.depth, bg.depth, 5);
+
+        // Add normals
+        depth2normals(bg.depth, bg.normals, 539, 539, 0, 0);
+//        imshow("Normals: ", abs(bg.normals)); waitKey();
+//        imshow("Depth: ", bg.depth); waitKey();
+
+        bgs.push_back(bg);
+        loadbar("  - loading backgrounds: ",i,last);
+    }
+    return bgs;
+}
+
 // Takes a color and depth frame and samples a normalized 4-channel patch at the given center position and z-scale
 Mat datasetManager::samplePatchWithScale(Mat &color, Mat &depth, Mat &normals, int center_x, int center_y, float z, float fx, float fy)
 {
@@ -176,7 +233,7 @@ vector<Sample> datasetManager::extractSceneSamplesPaul(vector<Frame,Eigen::align
     vector<Sample> samples;
     for (Frame &f : frames)
     {
-        // Vector3f centroid = f.gt * model.centroid;
+//         Vector3f centroid = f.gt * model.centroid;
         Vector3f centroid = f.gt.translation();
         Vector3f projCentroid = cam * centroid;
         projCentroid /= projCentroid(2);
@@ -221,7 +278,7 @@ vector<Sample> datasetManager::extractSceneSamplesPaul(vector<Frame,Eigen::align
         visualizer.setViewerPose(cv::Affine3f::Identity());
 
         // visualizer.showWidget("coo", viz::WCoordinateSystem());
-        visualizer.showWidget("cloud", wcloud);
+        visualizer.showWidget("cloud", wcloud); // cv::Affine3f::translation(cv::Vec3f(0,0,0))
         visualizer.showWidget("object", viz::WCloud(object, viz::Color::yellow()), cv::Affine3f(camcv));
         visualizer.showWidget("centroid", viz::WSphere(Point3f(centroid[0], centroid[1], centroid[2]), 0.02, 10, viz::Color::red()));
         visualizer.spin();
@@ -325,17 +382,11 @@ vector<Sample> datasetManager::createTemplatesPaul(Model &model, Matrix3f &cam, 
             sample.label.at<float>(0,5+tr) = pose.inverse().translation()(tr);
 
         samples.push_back(sample);
-
-        // Add random backgrounds
-        if (samples.size() > 301 && random_background) {
-            randomColorFill(sample.data);
-            samples.push_back(sample);
-        }
     }
     return samples;
 }
 
-vector<Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, int index, int subdiv, bool random_bg)
+vector<Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, int index, int subdiv)
 {
     // Create synthetic views
     SphereRenderer sphere(cam);
@@ -361,7 +412,6 @@ vector<Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, 
 
         Sample sample;
         sample.data = samplePatchWithScale(v.col,v.dep,normals,cam(0,2),cam(1,2),z,cam(0,0),cam(1,1));
-        if (random_background) randomColorFill(sample.data);
 
         // Build 6-dimensional label: model index + quaternion + translation
         sample.label = Mat(1,8,CV_32F);
@@ -375,11 +425,6 @@ vector<Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, 
         }
 
         samples.push_back(sample);
-
-        if (random_bg) {
-            randomColorFill(sample.data);
-            samples.push_back(sample);
-        }
     }
     return samples;
 
@@ -398,7 +443,7 @@ void datasetManager::createSceneSamplesAndTemplates()
         model.loadFile(dataset_path + model_name + ".ply");
 
         // - load frames of benchmark and visualize
-        // Benchmark bench = loadBigBirdBenchmark(dataset_path, model_name);
+//         Benchmark bench = loadBigBirdBenchmark(dataset_path, model_name);
         Benchmark bench = loadLinemodBenchmark(dataset_path, model_name);
         // showGT(bench,model);
 
@@ -414,16 +459,17 @@ void datasetManager::createSceneSamplesAndTemplates()
         clog << "  - render synthetic data:" << endl;
         // - create synthetic samples and templates
         int subdivTmpl = 2; // sphere subdivision factor for templates
-//        vector<Sample> templates = createTemplatesWadim(model, bench.cam, model_index[model_name], subdivTmpl, false);
-//        vector<Sample> synthSamples = createTemplatesWadim(model, bench.cam, model_index[model_name], subdivTmpl+1, random_background);
-         vector<Sample> temp = createTemplatesPaul(model, bench.cam, model_index[model_name]);
-         vector<Sample> templates (temp.begin(),temp.begin() + 301);
-         vector<Sample> synthSamples (temp.begin() + 302, temp.end());
+        vector<Sample> templates = createTemplatesWadim(model, bench.cam, model_index[model_name], subdivTmpl);
+        vector<Sample> synthSamples = createTemplatesWadim(model, bench.cam, model_index[model_name], subdivTmpl+1);
+//         vector<Sample> temp = createTemplatesPaul(model, bench.cam, model_index[model_name]);
+//         vector<Sample> templates (temp.begin(),temp.begin() + 301);
+//         vector<Sample> synthSamples (temp.begin() + 302, temp.end());
 
         // - store realSamples to HDF5 files
         h5.write(hdf5_path + "templates_" + model_name + ".h5", templates);
         h5.write(hdf5_path + "synthSamples_" + model_name + ".h5", synthSamples);
         // for (Sample &s : templates) showRGBDPatch(s.data);
+//        for (Sample &s : synthSamples) showRGBDPatch(s.data);
 
     }
 }
@@ -434,6 +480,9 @@ void datasetManager::generateDatasets()
     test_set.clear();
     templates.clear();
 
+    if (random_background)
+        backgrounds = loadBackgrounds(bg_path);
+
     for (string &seq : used_models)
     {
         // Read the data from hdf5 files
@@ -441,6 +490,13 @@ void datasetManager::generateDatasets()
         vector<Sample> train_synth(h5.read(hdf5_path + "synthSamples_" + seq + ".h5"));
         templates.push_back(h5.read(hdf5_path + "templates_" + seq + ".h5"));
         test_set.push_back(vector<Sample>());
+
+//        if (random_background) {
+//            for (Sample &s : train_synth) randomShapeFill(s.data);
+//            for (Sample &s : templates.back()) randomShapeFill(s.data);
+//            for (Sample &s : train_synth) randomColorFill(s.data);
+//            for (Sample &s : templates.back()) randomColorFill(s.data);
+//        }
 
         // Compute sizes and quaternions
         unsigned int nr_template_poses = templates[0].size();
@@ -485,8 +541,10 @@ void datasetManager::generateDatasets()
         for (size_t tmpl = 0; tmpl < nr_template_poses; ++tmpl) {
             if (!maxSimTmpl[tmpl].empty()) {
                 // - to training set
-                for (size_t i = 0; i < ceil(maxSimTmpl[tmpl].size()/2.0); ++i) {
-                    train_synth.push_back(train_real[maxSimTmpl[tmpl][i]]);
+                if (use_real) {
+                    for (size_t i = 0; i < ceil(maxSimTmpl[tmpl].size()/2.0); ++i) {
+                        train_synth.push_back(train_real[maxSimTmpl[tmpl][i]]);
+                    }
                 }
                 // - to test set
                 for (size_t i = ceil(maxSimTmpl[tmpl].size()/2.0); i < maxSimTmpl[tmpl].size(); ++i) {
@@ -559,8 +617,160 @@ void datasetManager::randomColorFill(Mat &patch)
         for (int c=0; c < patch.cols; ++c)
         {
             if (row[c*chans + 3] > 0) continue;
-            for (int ch = 0; ch < 3; ++ch)
+            for (int ch = 0; ch < 7; ++ch)
                 row[c*chans + ch] =  p(ran);
         }
     }
+}
+
+void datasetManager::randomShapeFill(Mat &patch)
+{
+    int patch_width = patch.size().width;
+    int patch_height = patch.size().height;
+
+    // Split the patch
+    vector<Mat> channels;
+    cv::split(patch,channels);
+    Mat patch_rgb,patch_dep,patch_nor;
+    cv::merge(vector<Mat>({channels[0],channels[1],channels[2]}),patch_rgb);
+    cv::merge(vector<Mat>({channels[3]}),patch_dep);
+    cv::merge(vector<Mat>({channels[4],channels[5],channels[6]}),patch_nor);
+
+    std::uniform_real_distribution<float> color(0.4f,0.8f);
+    std::uniform_int_distribution<int> coord(0,64);
+    std::uniform_int_distribution<int> r(0,40);
+
+    // Store a copy and fill it with random shapes
+    Mat tmp_rgb = Mat::zeros(patch_width, patch_height, CV_32FC3);
+    Mat tmp_dep = Mat::zeros(patch_width, patch_height, CV_32F);
+    for (int i = 0; i < 10; i++)
+    {
+      Point center;
+      center.x = coord(ran);
+      center.y = coord(ran);
+      int rad = r(ran);
+      circle(tmp_rgb, center, rad, Scalar(color(ran),color(ran),color(ran)), -1, 8);
+      circle(tmp_dep, center, rad, Scalar(color(ran)), -1, 8);
+
+    }
+//    medianBlur(tmp_rgb, tmp_rgb, 5);
+    GaussianBlur(tmp_rgb, tmp_rgb, Size(5,5), 0, 0);
+
+    // Copy random shapes to the background of the patch
+    for (int y = 0; y < patch_height; ++y) {
+        for (int x = 0; x < patch_width; ++x) {
+            for (int c = 0; c < patch_rgb.channels(); ++c) {
+                if(patch_rgb.at<Vec3f>(x,y)[c] > 0) continue;
+                patch_rgb.at<Vec3f>(x,y)[c] = tmp_rgb.at<Vec3f>(x,y)[c];
+            }
+        }
+    }
+    medianBlur(patch_rgb, patch_rgb, 3);
+
+    // Copy random shapes to the depth of the patch
+    for (int y = 0; y < patch_height; ++y) {
+        for (int x = 0; x < patch_width; ++x) {
+            if(patch_dep.at<float>(x,y) > 0) continue;
+            patch_dep.at<float>(x,y) = tmp_dep.at<float>(x,y);
+        }
+    }
+
+//    depth2normals(patch_dep,patch_nor,539,539,0,0);
+
+    cv::merge(vector<Mat>{patch_rgb,patch_dep,patch_nor},patch);
+//    showRGBDPatch(patch, true);
+
+}
+
+void datasetManager::randomBGFill(Mat &patch)
+{
+    Size sample_size(150,150);
+    Size patch_size(patch.size().width,patch.size().height);
+    Size bg_size(backgrounds[0].color.size().width, backgrounds[0].color.size().height);
+    Mat tmp_rgb, tmp_dep, tmp_nor;
+
+    // Split the patch
+    vector<Mat> channels;
+    cv::split(patch,channels);
+    Mat patch_rgb,patch_dep,patch_nor;
+    cv::merge(vector<Mat>({channels[0],channels[1],channels[2]}),patch_rgb);
+    cv::merge(vector<Mat>({channels[3]}),patch_dep);
+    cv::merge(vector<Mat>({channels[4],channels[5],channels[6]}),patch_nor);
+
+    // Take random background
+    std::uniform_int_distribution<int> r_bg(1, backgrounds.size()-1);
+    std::uniform_int_distribution<int> r_x(sample_size.width/2, bg_size.width - sample_size.width/2);
+    std::uniform_int_distribution<int> r_y(sample_size.height/2, bg_size.height - sample_size.height/2);
+
+    // Find a center point
+    float depth;
+    int bg = r_bg(ran), center_x = r_x(ran), center_y = r_y(ran);
+
+    // Check if image will be inside the bounds
+    while( isnan(backgrounds[bg].depth.at<float>(center_x, center_y))
+           || backgrounds[bg].depth.at<float>(center_x, center_y) < 0.4
+           || backgrounds[bg].depth.at<float>(center_x, center_y) > 5)
+        { bg = r_bg(ran), center_x = r_x(ran), center_y = r_y(ran); }
+
+    int tl_x, tl_y; // Estimate top left corner
+    depth = backgrounds[bg].depth.at<float>(center_x, center_y);
+    tl_x = center_x - sample_size.width/2;
+    tl_y = center_y - sample_size.height/2;
+
+    tmp_rgb = backgrounds[bg].color(Rect(tl_x, tl_y, sample_size.width, sample_size.height));
+    tmp_dep = backgrounds[bg].depth(Rect(tl_x, tl_y, sample_size.width, sample_size.height));
+    tmp_nor = backgrounds[bg].normals(Rect(tl_x, tl_y, sample_size.width, sample_size.height));
+
+    // Interpolate to the patch size
+    resize(tmp_rgb,tmp_rgb,patch_size);   // Standard bilinear interpolation
+    resize(tmp_nor,tmp_nor,patch_size);   // Standard bilinear interpolation
+    resize(tmp_dep,tmp_dep,patch_size,0,0,INTER_NEAREST); // Nearest-neighbor interpolation for depth!!!
+
+    // Store the mask
+    Mat mask = Mat::zeros(patch_size.width, patch_size.height, CV_8UC1);;
+    for (int y = 0; y < patch_size.height; ++y) {
+        for (int x = 0; x < patch_size.width; ++x) {
+            if (patch_dep.at<float>(x,y) > 0) mask.at<uchar>(x,y) = 255;
+        }
+    }
+
+    // Fill rgb background
+    tmp_rgb.convertTo(tmp_rgb, CV_32FC3, 1/255.f);
+//    medianBlur(patch_rgb, patch_rgb, 3);
+    for (int y = 0; y < patch_size.height; ++y) {
+        for (int x = 0; x < patch_size.width; ++x) {
+            for (int c = 0; c < patch_rgb.channels(); ++c) {
+                if (mask.at<uchar>(x,y) > 0) continue;
+                patch_rgb.at<Vec3f>(x,y)[c] = tmp_rgb.at<Vec3f>(x,y)[c];
+            }
+        }
+    }
+    medianBlur(patch_rgb, patch_rgb, 3);
+
+    // Adjust depth
+    float depth_scale = 0.45 / backgrounds[bg].depth.at<float>(center_x, center_y);
+    tmp_dep *= depth_scale;
+
+    // Fill depth background
+    for (int y = 0; y < patch_size.height; ++y) {
+        for (int x = 0; x < patch_size.width; ++x) {
+            if (mask.at<uchar>(x,y) > 0) continue;
+            patch_dep.at<float>(x,y) = tmp_dep.at<float>(x,y);
+        }
+    }
+
+    // Fill normals background
+    for (int y = 0; y < patch_size.height; ++y) {
+        for (int x = 0; x < patch_size.width; ++x) {
+            for (int c = 0; c < patch_nor.channels(); ++c) {
+                if (mask.at<uchar>(x,y) > 0) continue;
+                patch_nor.at<Vec3f>(x,y)[c] = tmp_nor.at<Vec3f>(x,y)[c];
+            }
+        }
+    }
+    medianBlur(patch_nor, patch_nor, 3);
+
+    cv::merge(vector<Mat>{patch_rgb,patch_dep,patch_nor},patch);
+//    showRGBDPatch(patch, true);
+
 }
