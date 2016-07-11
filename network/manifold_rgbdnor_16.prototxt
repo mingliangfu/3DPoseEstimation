@@ -1,7 +1,7 @@
 name: "MANIFOLD" 
  
 input: "data"
-input_shape{dim: 300 dim: 4 dim: 64 dim: 64}
+input_shape{dim: 300 dim: 7 dim: 64 dim: 64}
 
 layer { 
   name: "conv1" 
@@ -32,7 +32,7 @@ layer {
  
 layer { 
   name: "relu1" 
-  type: "ReLU" 
+  type: "PReLU" 
   bottom: "pool1" 
   top: "pool1" 
 } 
@@ -67,7 +67,7 @@ layer {
  
 layer { 
   name: "relu2" 
-  type: "ReLU" 
+  type: "PReLU" 
   bottom: "pool2" 
   top: "pool2" 
 } 
@@ -88,7 +88,7 @@ layer {
  
 layer { 
   name: "relu_ip1" 
-  type: "ReLU" 
+  type: "PReLU" 
   bottom: "ip1" 
   top: "ip1" 
 } 
@@ -101,7 +101,7 @@ layer {
   param { lr_mult: 1 } 
   param { lr_mult: 2 } 
   inner_product_param { 
-    num_output: 64 
+    num_output: 16 
     weight_filler {  type: "xavier" } 
     bias_filler { type: "constant" } 
   } 

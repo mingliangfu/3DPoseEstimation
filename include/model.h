@@ -37,25 +37,23 @@ public:
 
     vector<bool> computeEdgePoints();
 
-    vector<Vector3f> &getPoints() {return m_points;}
-    vector<Vector3f> &getColors() {return m_colors;}
-    vector<Vector3f> &getNormals(){return m_normals;}
-    vector<Vector3i> &getFaces() {return m_faces;}
+    vector<Vector3f, Eigen::aligned_allocator<Vector3f> > &getPoints() {return m_points;}
+    vector<Vector3f, Eigen::aligned_allocator<Vector3f> > &getColors() {return m_colors;}
+    vector<Vector3f, Eigen::aligned_allocator<Vector3f> > &getNormals(){return m_normals;}
+    vector<Vec3i> &getFaces() {return m_faces;}
 
     float getCubeSize() {return m_cube_size;}
-    bool loadPLY(string filename);
+    bool loadFile(string filename);
     void savePLY(string filename);
 
     Vector3f bb_min,bb_max, centroid;
     Matrix<float,3,8> boundingBox;
 
     // The data of the model
-    vector<Vector3f> m_normals, m_colors, m_points, m_localCoordColors;
-    vector<Vector3i> m_faces;
-
-    // Subsampled cloud for intermediate computations
-    vector<Vector3f> m_subpoints, m_subnormals;
-    vector<Vec3b> m_subcolors;
+    vector<Vector3f, Eigen::aligned_allocator<Vector3f> > m_normals, m_colors, m_points, m_localCoordColors;
+    vector<Vec3i> m_faces;
+    vector<Vec2f> m_tcoords;
+    Mat m_texture;
 
 private:
 
@@ -67,7 +65,7 @@ private:
 
     // OpenGL specifics for fast rendering
     GLuint m_vbo_vertices, m_vbo_indices;
-    vector<Vector3f> m_vertex_data;
+    vector<Vec3f> m_vertex_data;
 
 }; 
 

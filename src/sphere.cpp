@@ -4,6 +4,8 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/calib3d/calib3d.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/viz.hpp>
+#include <opencv2/features2d.hpp>
 
 #include "painter.h"
 #include "sphere.h"
@@ -62,7 +64,7 @@ pair<int,int> SphereRenderer::renderView(Model &model, Isometry3f &pose, Mat &co
     return {x,y};
 }
 /***************************************************************************/
-vector<RenderView, Eigen::aligned_allocator<RenderView> > SphereRenderer::createViews(Model &model,int sphereDep,Vector3f scale, Vector3f rotation, bool skipLowerHemi, bool skipRearPart, bool clip)
+vector<RenderView, Eigen::aligned_allocator<RenderView> > SphereRenderer::createViews(Model &model,int sphereDep,Vector3f scale, Vector3f rotation, bool skipLowerHemi, bool clip)
 {
     assert(m_camera(0,0)!=0);
 
@@ -76,18 +78,43 @@ vector<RenderView, Eigen::aligned_allocator<RenderView> > SphereRenderer::create
     for(float currsca : sca)
         for(Vector3f &pos : sphere)
         {
-            if((pos(0) < 0) && skipRearPart) continue;  // Skip negative x-part (for symmetric objects)
             if((pos(2) < 0) && skipLowerHemi) continue;  // Skip the lower hemisphere of the object
+
             for(float curr_rot : rots)
             {
                 RenderView view;
                 view.pose = createTransformation(pos,currsca,curr_rot);
-                pair<int,int> render = renderView(model,view.pose,view.col,view.dep, clip);
+                pair<int,int> render = renderView(model,view.pose,view.col,view.dep,clip);
                 view.x_off = render.first;
                 view.y_off = render.second;
                 out.push_back(view);
             }
         }
+
+#if 0
+    // Visualize the sphere
+    Mat DBfeats;
+    for(Vector3f &pos : sphere)
+    {
+       if((pos(2) < 0) && skipLowerHemi) continue;  // Skip the lower hemisphere of the object
+
+       float sz[3] = {pos(0), pos(2), pos(1)};
+       Mat pose = Mat(1, 3, CV_32FC1, &sz);
+       DBfeats.push_back(pose);
+    }
+
+    // Visualize for the case where feat_dim is 3D
+    viz::Viz3d visualizer("Sphere");
+    cv::Mat vizMat(DBfeats.rows,1,CV_32FC3, DBfeats.data);
+    viz::WCloud sphere_cloud(vizMat,cv::viz::Color::black());
+    sphere_cloud.setRenderingProperty(viz::POINT_SIZE, 5);
+    visualizer.setBackgroundColor(cv::viz::Color::white(), cv::viz::Color::white());
+    visualizer.setWindowSize(cv::Size(500, 400));
+//    visualizer.setViewerPose();
+    visualizer.showWidget("cloud", sphere_cloud);
+    visualizer.spin();
+//    visualizer.saveScreenshot("sampling.png");
+#endif
 
     /*
     for(int i=0; i< sphere.size()-1; ++i)

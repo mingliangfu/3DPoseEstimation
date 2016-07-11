@@ -1,606 +1,483 @@
 #include "networksolver.h"
 
-networkSolver::networkSolver(string network_path, string hdf5_path):
-               network_path(network_path), hdf5_path(hdf5_path)
+networkSolver::networkSolver(string config, datasetManager* db): db(db), templates(db->getTemplateSet()), training_set(db->getTrainingSet()),
+                                                                 test_set(db->getTestSet()), tmpl_quats(db->getTmplQuats()),
+                                                                 training_quats(db->getTrainingQuats()), test_quats(db->getTestQuats()),
+                                                                 config(config)
 {
+    // Read config parameters
+    readParam(config);
 }
 
-TripletsPairs networkSolver::buildTripletsPairs(vector<string> used_models)
+vector<Sample> networkSolver::buildBatch(int batch_size, unsigned int triplet_size, int iter, bool bootstrapping)
 {
-    vector<Triplet> triplets;
-    vector<Pair> pairs;
-    TripletsPairs triplets_pairs;
-
-    size_t nr_objects = used_models.size();
-    assert(nr_objects > 1);
-
-    // Read stored templates and scene samples for the used models
-    vector< vector<Sample> > training, templates, temp;
-    for (string &seq : used_models)
-    {
-        training.push_back(h5.read(hdf5_path + "realSamples_" + seq +".h5"));
-        temp.push_back(h5.read(hdf5_path + "synthSamples_" + seq +".h5"));
-        training[training.size()-1].insert(training[training.size()-1].end(), temp[0].begin(), temp[0].end());
-        temp.clear();
-        templates.push_back(h5.read(hdf5_path + "templates_" + seq + ".h5"));
-
-
-    }
-
-    // Read quaternion poses from training data
-    vector< vector<Quaternionf, Eigen::aligned_allocator<Quaternionf> > > training_quats(nr_objects);
-    for  (int i=0; i < nr_objects; ++i)
-    {
-        training_quats[i].resize(training[i].size());
-        for (size_t k=0; k < training_quats[i].size(); ++k)
-            for (int j=0; j < 4; ++j)
-                training_quats[i][k].coeffs()(j) = training[i][k].label.at<float>(0,1+j);
-    }
-
-    // Read quaternion poses from templates (they are identical for all objects)
-    int nr_poses = templates[0].size();
-    vector<Quaternionf, Eigen::aligned_allocator<Quaternionf> > tmpl_quats(nr_poses);
-    for  (int i=0; i < nr_poses; ++i)
-        for (int j=0; j < 4; ++j)
-            tmpl_quats[i].coeffs()(j) = templates[0][i].label.at<float>(0,1+j);
-
-    // Build a bool vector for each object that stores if all templates have been used yet
-    vector< vector<bool> > tmpl_used(nr_objects);
-    for (auto &vec : tmpl_used)
-        vec.assign(nr_poses,false);
+    vector<Sample> batch;
+    size_t puller = 0, pusher0 = 0, pusher1 = 0, pusher2 = 0;
+    TripletWang triplet;
 
     // Random generator for object selection and template selection
-    std::uniform_int_distribution<size_t> ran_obj(0, nr_objects-1), ran_tpl(0, nr_poses-1);
+    std::uniform_int_distribution<size_t> ran_obj(0, nr_objects-1), ran_tpl(0, nr_template_poses-1);
 
-    // Random generators that returns a random scene sample for a given object
-    vector< std::uniform_int_distribution<size_t> > ran_training_sample(nr_objects);
-    for  (int i=0; i < nr_objects; ++i)
-        ran_training_sample[i] = std::uniform_int_distribution<size_t>(0, training[i].size()-1);
+    for (size_t linearId = iter * batch_size/triplet_size; linearId < (iter * batch_size/triplet_size) + batch_size/triplet_size; ++linearId) {
 
+        // Calculate 2d indices
+        unsigned int training_pose = linearId / nr_objects;
+        unsigned int object = linearId % nr_objects;
 
-    for(bool finished=false; !finished;)
-    {
-        size_t anchor, puller, pusher, oldpusher;
+        // Anchor: training set sample
+        triplet.anchor.copySample(training_set[object][training_pose]);
+        // Puller: most similar template
+        puller = maxSimTmpl[object][training_pose][0];
+        triplet.puller.copySample(templates[object][puller]);
 
-        // Build each triplet by cycling through each object
-        for (size_t obj=0; obj < nr_objects; obj++)
+        // Pusher 0: second most similar template
+        pusher0 = maxSimTmpl[object][training_pose][1];
+        triplet.pusher0.copySample(templates[object][pusher0]);
+
+        if (bootstrapping)
         {
+            // Pusher 1: fill either with the missclassified nn or random template of the same class
+            unsigned int knn_object = maxSimKNNTmpl[object][training_pose][0];
+            unsigned int knn_pose = maxSimKNNTmpl[object][training_pose][1];
 
-            /// Type 0: A random scene sample together with closest template against another template
+            if (knn_object != object || knn_pose != puller) {
+                // - missclassified nearest neighbor
+                triplet.pusher1.copySample(templates[knn_object][knn_pose]);
+            } else {
+                // - random template of the same class
+                // -- if model is rotInv or symmetric
+                if (rotInv[global_model_index[used_models[object]]] != 0)
+                {
+                    // -- randomize until elevation levels of the puller and pusher 1 are different
+                    pusher1 = ran_tpl(ran);
+                    while(acos(tmpl_quats[object][pusher1].toRotationMatrix()(2,2)) - acos(tmpl_quats[object][puller].toRotationMatrix()(2,2)) < 0.2)
+                        pusher1 = ran_tpl(ran);
+                    triplet.pusher1.copySample(templates[object][pusher1]);
 
-            // Pull random scene sample and find closest pose neighbor from templates
-            size_t ran_sample = ran_training_sample[obj](ran);
-            puller=0;
-            float best_dist = numeric_limits<float>::max();
-            for (size_t temp=0; temp < nr_poses; temp++)
-            {
-//                if (tmpl_used[obj][temp]) continue;  // Skip if template already used
-                float temp_dist = training_quats[obj][ran_sample].angularDistance(tmpl_quats[temp]);
-                if (temp_dist >= best_dist) continue;
-                puller = temp;
-                best_dist = temp_dist;
+                // -- if model is normal
+                } else {
+                    pusher1 = ran_tpl(ran);
+                    while(pusher1 == puller && pusher1 == pusher0) pusher1 = ran_tpl(ran);
+                    triplet.pusher1.copySample(templates[object][pusher1]);
+                }
             }
 
-
-            // Mark template as used
-//            tpml_used[obj][puller] = true;
-
-
-            // Randomize through until pusher != puller
-            pusher = ran_tpl(ran);
-            while (pusher == puller) pusher = ran_tpl(ran);
-
-            Triplet triplet0;
-            triplet0.anchor = training[obj][ran_sample];
-            triplet0.puller = templates[obj][puller];
-            triplet0.pusher = templates[obj][pusher];
-            triplets.push_back(triplet0);
-            oldpusher = pusher;
-
-
-            /// Type 1: All templates are from same object but first two are closer than the third
-
-            // Randomize through until pusher is neither anchor nor puller
-            pusher = ran_tpl(ran);
-            while ((pusher == puller) && (pusher == oldpusher)) pusher = ran_tpl(ran);
-
-            Triplet triplet1;
-            triplet1.anchor = training[obj][ran_sample];
-            triplet1.puller = templates[obj][puller];
-            triplet1.pusher = templates[obj][pusher];
-            triplets.push_back(triplet1);
-
-            /// Type 2: two templates are from same object, the third from another
-
-            // Randomize through until pusher is another object
-            pusher = ran_obj(ran);
-            while (pusher == obj) pusher = ran_obj(ran);
-
-            Triplet triplet2;
-            triplet2.anchor = training[obj][ran_sample];
-            triplet2.puller = templates[obj][puller];
-            triplet2.pusher = templates[pusher][ran_tpl(ran)];
-            triplets.push_back(triplet2);
-
-
-#if 0      // Show triplets
-            for (size_t idx = triplets.size()-3; idx < triplets.size(); idx++)
+            // Pusher 2: fill either with the missclassified knn or random template of a different class
+            if (maxSimKNNTmpl[object][training_pose].size() > 2 && (knn_object != object || knn_pose != puller)) {
+                // - missclassified knn of a different object
+                knn_object = maxSimKNNTmpl[object][training_pose][2];
+                knn_pose = maxSimKNNTmpl[object][training_pose][3];
+                triplet.pusher2.copySample(templates[knn_object][knn_pose]);
+            } else {
+                // - template from another object
+                pusher2 = ran_obj(ran);  
+                while (pusher2 == object) pusher2 = ran_obj(ran);
+                triplet.pusher2.copySample(templates[pusher2][ran_tpl(ran)]);
+            }
+        } else {
+            // Pusher 1: random template of the same class
+            // - if model is rotInv or symmetric
+            if (rotInv[global_model_index[used_models[object]]] != 0)
             {
-                imshow("anchor",showRGBDPatch(triplets[idx].anchor.data,false));
-                imshow("puller",showRGBDPatch(triplets[idx].puller.data,false));
-                imshow("pusher",showRGBDPatch(triplets[idx].pusher.data,false));
-                waitKey();
+                // -- randomize until elevation levels of the puller and pusher 1 are different
+                pusher1 = ran_tpl(ran);
+                while(acos(tmpl_quats[object][pusher1].toRotationMatrix()(2,2)) - acos(tmpl_quats[object][puller].toRotationMatrix()(2,2)) < 0.2)
+                    pusher1 = ran_tpl(ran);
+                triplet.pusher1.copySample(templates[object][pusher1]);
+
+            // - if model is normal
+            } else {
+                pusher1 = ran_tpl(ran);
+                while(pusher1 == puller && pusher1 == pusher0) pusher1 = ran_tpl(ran);
+                triplet.pusher1.copySample(templates[object][pusher1]);
             }
 
-#endif
-
-            /// Add pairs
-            Pair pair;
-            pair.anchor = training[obj][ran_sample];
-            pair.puller = templates[obj][puller];
-            pairs.push_back(pair);
-
-        }
-
-        // Check if we are finished (if all templates of all objects were anchors once)
-        for (auto &vec : tmpl_used)
-            for (int i=0; i < nr_poses; ++i) finished &= vec[i];
-
-        finished = triplets.size()>100000;
-
-    }
-    triplets_pairs.triplets = triplets;
-    triplets_pairs.pairs = pairs;
-
-    return triplets_pairs;
-}
-
-vector<TripletWang> networkSolver::buildTripletsWang(vector<string> used_models)
-{
-    vector<TripletWang> triplets;
-
-    size_t nr_objects = used_models.size();
-    assert(nr_objects > 1);
-
-    // Read stored templates and scene samples for the used models
-    vector<vector<Sample>> training, templates;
-    for (string &seq : used_models)
-    {
-        vector<Sample> temp_real(h5.read(hdf5_path + "realSamples_" + seq + ".h5"));
-        vector<Sample> temp_synth(h5.read(hdf5_path + "synthSamples_" + seq + ".h5"));
-
-        // Crop the vector: real 50%, synthetic 70%
-        temp_real.resize((temp_real.size()-1)*0.5);
-        temp_synth.resize((temp_synth.size()-1)*0.7);
-
-        vector<Sample> temp_sum(temp_real);
-        temp_sum.insert(temp_sum.end(), temp_synth.begin(), temp_synth.end());
-
-        training.push_back(temp_sum);
-        templates.push_back(h5.read(hdf5_path + "templates_" + seq + ".h5"));
-    }
-
-    // Read quaternion poses from training data
-    vector< vector<Quaternionf, Eigen::aligned_allocator<Quaternionf> > > training_quats(nr_objects);
-    for  (int i=0; i < nr_objects; ++i)
-    {
-        training_quats[i].resize(training[i].size());
-        for (size_t k=0; k < training_quats[i].size(); ++k)
-            for (int j=0; j < 4; ++j)
-                training_quats[i][k].coeffs()(j) = training[i][k].label.at<float>(0,1+j);
-    }
-
-    // Read quaternion poses from templates (they are identical for all objects)
-    int nr_poses = templates[0].size();
-    vector<Quaternionf, Eigen::aligned_allocator<Quaternionf> > tmpl_quats(nr_poses);
-    for  (int i=0; i < nr_poses; ++i)
-        for (int j=0; j < 4; ++j)
-            tmpl_quats[i].coeffs()(j) = templates[0][i].label.at<float>(0,1+j);
-
-    // Build a bool vector for each object that stores if all templates have been used yet
-    vector< vector<bool> > tmpl_used(nr_objects);
-    for (auto &vec : tmpl_used)
-        vec.assign(nr_poses,false);
-
-    // Random generator for object selection and template selection
-    std::uniform_int_distribution<size_t> ran_obj(0, nr_objects-1), ran_tpl(0, nr_poses-1);
-
-    // Random generators that returns a random scene sample for a given object
-    vector< std::uniform_int_distribution<size_t> > ran_training_sample(nr_objects);
-    for  (int i=0; i < nr_objects; ++i)
-        ran_training_sample[i] = std::uniform_int_distribution<size_t>(0, training[i].size()-1);
-
-
-    for(bool finished=false; !finished;)
-    {
-        size_t anchor, puller, pusher0, pusher1, pusher2;
-        TripletWang triplet;
-
-        // Build each triplet by cycling through each object
-        for (size_t obj=0; obj < nr_objects; obj++)
-        {
-
-            // Pull random scene sample and find closest pose neighbor from templates
-            size_t ran_sample = ran_training_sample[obj](ran);
-            float best_dist = numeric_limits<float>::max();
-            float best_dist2 = numeric_limits<float>::max(); // second best
-
-            triplet.anchor = training[obj][ran_sample];
-
-            // Find the puller: most similar template
-            for (size_t temp = 0; temp < nr_poses; temp++)
-            {
-                float temp_dist = training_quats[obj][ran_sample].angularDistance(tmpl_quats[temp]);
-                if (temp_dist >= best_dist) continue;
-                puller = temp;
-                best_dist = temp_dist;
-            }
-            triplet.puller = templates[obj][puller];
-
-            // Find pusher0: second most similar template
-            for (size_t temp = 0; temp < nr_poses; temp++)
-            {
-                float temp_dist = training_quats[obj][ran_sample].angularDistance(tmpl_quats[temp]);
-                if (temp_dist >= best_dist2 || temp_dist == best_dist) continue;
-                pusher0 = temp;
-                best_dist2 = temp_dist;
-            }
-            triplet.pusher0 = templates[obj][pusher0];
-
-            // Find pusher1: random template
-            pusher1 = ran_tpl(ran);
-            while (pusher1 == puller && pusher1 == pusher0) pusher1 = ran_tpl(ran);
-            triplet.pusher1 = templates[obj][pusher1];
-
-            // Find pusher2: template from another object
+            // Pusher 2: random template of a different class
             pusher2 = ran_obj(ran);
-            while (pusher2 == obj) pusher2 = ran_obj(ran);
-            triplet.pusher2 = templates[pusher2][ran_tpl(ran)];
-            triplets.push_back(triplet);
+            while (pusher2 == object) pusher2 = ran_obj(ran);
+            triplet.pusher2.copySample(templates[pusher2][ran_tpl(ran)]);
+        }
 
-#if 0      // Show triplets
-            for (size_t idx = triplets.size()-3; idx < triplets.size(); idx++)
-            {
-                imshow("anchor",showRGBDPatch(triplets[idx].anchor.data,false));
-                imshow("puller",showRGBDPatch(triplets[idx].puller.data,false));
-                imshow("pusher0",showRGBDPatch(triplets[idx].pusher0.data,false));
-                imshow("pusher1",showRGBDPatch(triplets[idx].pusher1.data,false));
-                imshow("pusher2",showRGBDPatch(triplets[idx].pusher2.data,false));
-                waitKey();
-            }
+        if (random_background) {
+            db->randomBGFill(triplet.anchor.data);
+            db->randomBGFill(triplet.puller.data);
+            db->randomBGFill(triplet.pusher0.data);
+            db->randomBGFill(triplet.pusher1.data);
+            db->randomBGFill(triplet.pusher2.data);
+        }
+
+        // Store triplet to the batch
+        batch.push_back(triplet.anchor);
+        batch.push_back(triplet.puller);
+        batch.push_back(triplet.pusher0);
+        batch.push_back(triplet.pusher1);
+        batch.push_back(triplet.pusher2);
+
+#if 0   // Show triplets
+        imshow("anchor",showRGBDPatch(triplet.anchor.data,false));
+        imshow("puller",showRGBDPatch(triplet.puller.data,false));
+        imshow("pusher0",showRGBDPatch(triplet.pusher0.data,false));
+        imshow("pusher1",showRGBDPatch(triplet.pusher1.data,false));
+        imshow("pusher2",showRGBDPatch(triplet.pusher2.data,false));
+        waitKey();
 #endif
-        }
 
-        finished = triplets.size()>100000;
     }
-    return triplets;
+    return batch;
 }
 
-void networkSolver::trainNet(vector<string> used_models, string net_name, int resume_iter/*=0*/)
+void networkSolver::trainNet(int resume_iter)
 {
+    // Set network parameters
     caffe::SolverParameter solver_param;
-    solver_param.set_base_lr(0.0001);
-    solver_param.set_momentum(0.9);
-    solver_param.set_weight_decay(0.0005);
-
+    solver_param.set_base_lr(learning_rate);
+    solver_param.set_momentum(momentum);
+    solver_param.set_weight_decay(weight_decay);
     solver_param.set_solver_type(caffe::SolverParameter_SolverType_SGD);
-
-    solver_param.set_stepsize(1000);
-    solver_param.set_lr_policy("step");
-    solver_param.set_gamma(0.9);
-
-    int max_iters = 150000;
-    solver_param.set_max_iter(150000);
-
-    solver_param.set_snapshot(20000);
+    solver_param.set_lr_policy(learning_policy);
+    solver_param.set_stepsize(step_size);
+    solver_param.set_gamma(gamma);
     solver_param.set_snapshot_prefix(net_name);
-
     solver_param.set_display(1);
     solver_param.set_net(network_path + net_name + ".prototxt");
-    caffe::SGDSolver<float> *solver = new caffe::SGDSolver<float>(solver_param);
-    if (resume_iter>0)
-    {
-        string resume_file = network_path + net_name + "_iter_" + to_string(resume_iter) + ".solverstate";
-        solver->Restore(resume_file.c_str());
+    caffe::SGDSolver<float> solver(solver_param);
+    bool bootstrapping = false;
+
+    // Store the test network
+    caffe::Net<float> testCNN(network_path + net_name + ".prototxt", caffe::TEST);
+
+    if (resume_iter > 0) {
+        string resume_file = net_name + "_iter_" + to_string(resume_iter) + ".solverstate";
+        solver.Restore(resume_file.c_str());
+        bootstrapping = computeKNN(testCNN);
     }
 
-    // Read the scene samples
-    vector<Sample> batch;
-    TripletsPairs triplets_pairs;
-    triplets_pairs = buildTripletsPairs(used_models);
-
     // Get network information
-    boost::shared_ptr<caffe::Net<float> > net = solver->net();
+    boost::shared_ptr<caffe::Net<float> > net = solver.net();
     caffe::Blob<float>* input_data_layer = net->input_blobs()[0];
-    caffe::Blob<float>* input_label_layer = net->input_blobs()[1];
-    const size_t batchSize = input_data_layer->num();
+    const size_t batch_size = input_data_layer->num();
     const int channels =  input_data_layer->channels();
     const int targetSize = input_data_layer->height();
     const int slice = input_data_layer->height()*input_data_layer->width();
     const int img_size = slice*channels;
+    vector<float> data(batch_size*img_size,0), labels(batch_size,0);
 
-    vector<float> data(batchSize*img_size,0), labels(batchSize,0);
-
-    // Perform training
-    for (int iter = 0; iter <= max_iters; iter++)
-    {
-        // Fill current batch
-        int batch_pairs = 132;
-        int batch_triplets = 198;
-        batch.clear();
-
-        // Loop through the number of samples per batch
-        for (int sampleId = iter*batchSize; sampleId < iter*batchSize; ++sampleId)
-        {
-            // - fill triplets [:198]
-            for (int tripletId = (sampleId-(batch_pairs*iter))/3; tripletId < (sampleId-(batch_pairs*iter))/3 + batch_triplets/3; ++tripletId) {
-                batch.push_back(triplets_pairs.triplets[tripletId].anchor);
-                batch.push_back(triplets_pairs.triplets[tripletId].puller);
-                batch.push_back(triplets_pairs.triplets[tripletId].pusher);
-            }
-            // - fill pairs [198:330]
-            for (int pairId = (sampleId-(batch_triplets*iter))/2; pairId < (sampleId-(batch_triplets*iter))/2 + batch_pairs/2; ++pairId) {
-                batch.push_back(triplets_pairs.pairs[pairId].anchor);
-                batch.push_back(triplets_pairs.pairs[pairId].puller);
-            }
-        }
-
-        // Fill linear batch memory with input data in Caffe layout with channel-first and set as network input
-        for (size_t i=0; i < batch.size(); ++i)
-        {
-            int currImg = i*img_size;
-            for (int ch=0; ch < channels ; ++ch)
-                for (int y = 0; y < targetSize; ++y)
-                    for (int x = 0; x < targetSize; ++x)
-                        data[currImg + slice*ch + y*targetSize + x] = batch[i].data.ptr<float>(y)[x*channels + ch];
-            labels[i] = batch[i].label.at<float>(0,0);
-        }
-        input_data_layer->set_cpu_data(data.data());
-        //input_label_layer->set_cpu_data(labels.data());
-        solver->Step(1);
-    }
-}
-
-void networkSolver::trainNetWang(vector<string> used_models, string net_name, int resume_iter)
-{
-    caffe::SolverParameter solver_param;
-    solver_param.set_base_lr(0.0001);
-    solver_param.set_momentum(0.9);
-    solver_param.set_weight_decay(0.0005);
-
-    solver_param.set_solver_type(caffe::SolverParameter_SolverType_SGD);
-
-    solver_param.set_stepsize(1000);
-    solver_param.set_lr_policy("step");
-    solver_param.set_gamma(0.9);
-
-    int max_iters = 150000;
-    solver_param.set_max_iter(150000);
-
-    solver_param.set_snapshot(20000);
-    solver_param.set_snapshot_prefix(net_name);
-
-    solver_param.set_display(1);
-    solver_param.set_net(network_path + net_name + ".prototxt");
-    caffe::SGDSolver<float> *solver = new caffe::SGDSolver<float>(solver_param);
-    if (resume_iter>0)
-    {
-        string resume_file = network_path + net_name + "_iter_" + to_string(resume_iter) + ".solverstate";
-        solver->Restore(resume_file.c_str());
-    }
-
-    // Read the scene samples
     vector<Sample> batch;
-    vector<TripletWang> triplets;
-    triplets = buildTripletsWang(used_models);
+    unsigned int triplet_size = 5;
+    unsigned int epoch_iter = nr_objects * nr_training_poses / (batch_size/triplet_size);
 
-    // Get network information
-    boost::shared_ptr<caffe::Net<float> > net = solver->net();
-    caffe::Blob<float>* input_data_layer = net->input_blobs()[0];
-//    caffe::Blob<float>* input_label_layer = net->input_blobs()[1];
-    const size_t batchSize = input_data_layer->num();
-    const int channels =  input_data_layer->channels();
-    const int targetSize = input_data_layer->height();
-    const int slice = input_data_layer->height()*input_data_layer->width();
-    const int img_size = slice*channels;
-
-    vector<float> data(batchSize*img_size,0), labels(batchSize,0);
+    // Compute MaxSimTmpls to build batches
+    if (inplane) { computeMaxSimTmplInplane(); }
+            else { computeMaxSimTmpl(); }
 
     // Perform training
-    for (int iter = 0; iter <= max_iters; iter++)
+    for (size_t training_round = 0; training_round < num_training_rounds; ++training_round)
     {
-        // Fill current batch
-        batch.clear();
-
-        // Loop through the number of samples per batch
-        for (int tripletId = (iter*batchSize)/5; tripletId < (iter*batchSize)/5 + batchSize/5; ++tripletId) {
-            batch.push_back(triplets[tripletId].anchor);
-            batch.push_back(triplets[tripletId].puller);
-            batch.push_back(triplets[tripletId].pusher0);
-            batch.push_back(triplets[tripletId].pusher1);
-            batch.push_back(triplets[tripletId].pusher2);
-        }
-
-        // Fill linear batch memory with input data in Caffe layout with channel-first and set as network input
-        for (size_t i=0; i < batch.size(); ++i)
+        for (size_t epoch = 0; epoch < num_epochs; epoch++)
         {
-            int currImg = i*img_size;
-            for (int ch=0; ch < channels ; ++ch)
-                for (int y = 0; y < targetSize; ++y)
-                    for (int x = 0; x < targetSize; ++x){
-                        data[currImg + slice*ch + y*targetSize + x] = batch[i].data.ptr<float>(y)[x*channels + ch];
-                        labels[i] = batch[i].label.at<float>(0,0); }
-        }
-        input_data_layer->set_cpu_data(data.data());
-//        input_label_layer->set_cpu_data(labels.data());
-        solver->Step(1);
-    }
-}
-
-Mat networkSolver::computeDescriptors(caffe::Net<float> &CNN, vector<Sample> samples)
-{
-
-    caffe::Blob<float>* input_layer = CNN.input_blobs()[0];
-    const size_t batchSize = input_layer->num();
-    const int channels =  input_layer->channels();
-    const int targetSize = input_layer->height();
-    const int slice = input_layer->height()*input_layer->width();
-    const int img_size = slice*channels;
-
-    caffe::Blob<float>* output_layer = CNN.output_blobs()[0];
-    const size_t desc_dim = output_layer->channels();
-
-    vector<float> data(batchSize*img_size,0);
-    vector<int> currIdxs;
-    Mat descs(samples.size(),desc_dim,CV_32F);
-
-    currIdxs.reserve(batchSize);
-    for (size_t i=0; i < samples.size(); ++i)
-    {
-        // Collect indices of samples to be processed for this batch
-        currIdxs.push_back(i);
-        if (currIdxs.size() == batchSize || i == samples.size()-1) // If batch full or last sample
-        {
-            // Fill linear batch memory with input data in Caffe layout with channel-first
-            for (size_t j=0; j < currIdxs.size(); ++j)
+            for (size_t iter = 0; iter < epoch_iter; iter++)
             {
-                Mat &patch = samples[currIdxs[j]].data;
-                int currImg = j*img_size;
-                for (int ch=0; ch < channels ; ++ch)
+                // Fill current batch
+                batch = buildBatch(batch_size, triplet_size, iter, bootstrapping);
+
+                // Fill linear batch memory with input data in Caffe layout with channel-first and set as network input
+                for (size_t i=0; i < batch.size(); ++i)
+                {
+                    int currImg = i*img_size;
+                    for (int ch = 0; ch < channels ; ++ch)
+                        for (int y = 0; y < targetSize; ++y)
+                            for (int x = 0; x < targetSize; ++x) {
+                                data[currImg + slice*ch + y*targetSize + x] = batch[i].data.ptr<float>(y)[x*channels + ch];
+                                labels[i] = batch[i].label.at<float>(0,0); }
+                }
+                input_data_layer->set_cpu_data(data.data());
+                solver.Step(1);
+            }
+        }
+
+        // Do bootstraping
+        solver.Snapshot();
+        int snapshot_iter = epoch_iter * num_epochs * (training_round + 1) + resume_iter;
+        testCNN.CopyTrainedLayersFrom(net_name + "_iter_" + to_string(snapshot_iter) + ".caffemodel");
+
+        if (random_background) {
+            vector<vector<Sample>> copy_tmpl(templates.size(), vector<Sample>(templates[0].size()));
+            for (int object = 0; object < templates.size(); ++object) {
+                for (int pose = 0; pose < templates[0].size(); ++pose) {
+                    copy_tmpl[object][pose].copySample(templates[object][pose]);
+                    db->randomBGFill(copy_tmpl[object][pose].data);
+                }
+            }
+            eval::computeHistogram(testCNN, copy_tmpl, training_set, test_set, rotInv, config, snapshot_iter);
+            eval::computeHistogram(testCNN, templates, training_set, test_set, rotInv, config, snapshot_iter);
+        } else {
+            eval::computeHistogram(testCNN, templates, training_set, test_set, rotInv, config, snapshot_iter);
+        }
+        bootstrapping = computeKNN(testCNN);
+    }
+    clog << "Training finished!" << endl;
+}
+
+
+void networkSolver::binarizeNet(int resume_iter)
+{
+    // Set network parameters
+    caffe::SolverParameter solver_param;
+    solver_param.set_base_lr(learning_rate);
+    solver_param.set_momentum(momentum);
+    solver_param.set_weight_decay(weight_decay);
+    solver_param.set_solver_type(caffe::SolverParameter_SolverType_SGD);
+    solver_param.set_lr_policy(learning_policy);
+    solver_param.set_stepsize(step_size);
+    solver_param.set_gamma(gamma);
+    solver_param.set_snapshot_prefix(binarization_net_name);
+    solver_param.set_display(1);
+    solver_param.set_net(network_path + binarization_net_name + ".prototxt");
+    caffe::SGDSolver<float> solver(solver_param);
+
+    if (resume_iter > 0) {
+        string resume_file = net_name + "_iter_" + to_string(resume_iter) + ".caffemodel";
+        solver.net()->CopyTrainedLayersFrom(resume_file.c_str());
+    }
+
+    // Get network information
+    boost::shared_ptr<caffe::Net<float> > net = solver.net();
+    caffe::Blob<float>* input_data_layer = net->input_blobs()[0];
+    const size_t batch_size = input_data_layer->num();
+    const int channels =  input_data_layer->channels();
+    const int targetSize = input_data_layer->height();
+    const int slice = input_data_layer->height()*input_data_layer->width();
+    const int img_size = slice*channels;
+    vector<float> data(batch_size*img_size,0);
+
+    vector<Sample> batch;
+    unsigned int triplet_size = 5;
+    unsigned int epoch_iter = nr_objects * nr_training_poses / (batch_size/triplet_size);
+
+    // Compute MaxSimTmpls to build batches
+    computeMaxSimTmpl();
+
+    // Perform training
+    for (size_t epoch = 0; epoch < binarization_epochs; epoch++)
+    {
+        for (size_t iter = 0; iter < epoch_iter; iter++)
+        {
+            // Fill current batch
+            batch = buildBatch(batch_size, iter, false, triplet_size);
+
+            // Fill linear batch memory with input data in Caffe layout with channel-first and set as network input
+            for (size_t i=0; i < batch.size(); ++i)
+            {
+                int currImg = i*img_size;
+                for (int ch = 0; ch < channels ; ++ch)
                     for (int y = 0; y < targetSize; ++y)
                         for (int x = 0; x < targetSize; ++x)
-                            data[currImg + slice*ch + y*targetSize + x] = patch.ptr<float>(y)[x*channels + ch];
+                            data[currImg + slice*ch + y*targetSize + x] = batch[i].data.ptr<float>(y)[x*channels + ch];
             }
-            // Copy data memory into Caffe input layer, process batch and copy result back
-            input_layer->set_cpu_data(data.data());
-            vector< caffe::Blob<float>* > out = CNN.ForwardPrefilled();
-
-            for (size_t j=0; j < currIdxs.size(); ++j)
-                memcpy(descs.ptr<float>(currIdxs[j]), out[0]->cpu_data() + j*desc_dim, desc_dim*sizeof(float));
-
-            currIdxs.clear(); // Throw away current batch
+            input_data_layer->set_cpu_data(data.data());
+            solver.Step(1);
         }
     }
-    return descs;
+
+    solver.Snapshot();
+    clog << "Binarization training finished!" << endl;
 }
 
-void networkSolver::testNet()
+
+bool networkSolver::computeKNN(caffe::Net<float> &CNN)
 {
-    caffe::Caffe::set_mode(caffe::Caffe::CPU);
-    caffe::Net<float> CNN(network_path + "manifold_test.prototxt", caffe::TEST);
-    CNN.CopyTrainedLayersFrom(network_path + "manifold_iter_25000.caffemodel");
-
-    vector<Sample> ape = h5.read(hdf5_path + "templates_ape.h5");
-    ape.resize(301);
-    Mat ape_descs = computeDescriptors(CNN,ape);
-
-
-    vector<Sample> driller = h5.read(hdf5_path + "templates_driller.h5");
-    driller.resize(301);
-    Mat driller_descs = computeDescriptors(CNN,driller);
-
-    Mat descs;
-    descs.push_back(ape_descs);
-    descs.push_back(driller_descs);
-
-    cerr << descs << endl;
-
-    // Visualize for the case where feat_dim is 3D
-    viz::Viz3d lol;
-    cv::Mat vizMat(descs.rows,1,CV_32FC3, descs.data);
-    cv::Mat colorMat;
-    colorMat.push_back(Mat(301,1,CV_8UC3,Scalar(255,0,0)));
-    colorMat.push_back(Mat(301,1,CV_8UC3,Scalar(0,255,0)));
-
-    lol.showWidget("cloud",viz::WCloud(vizMat,colorMat));
-    //lol.setViewerPose(cv::Affine3f::Identity());
-    lol.spin();
-
-}
-
-Mat networkSolver::showRGBDPatch(Mat &patch, bool show/*=true*/)
-{
-    vector<Mat> channels;
-    //cv::split((patch+1.f)*0.5f,channels);
-    cv::split(patch,channels);
-
-    Mat RGB,D,out(patch.rows,patch.cols*2,CV_32FC3);
-
-    cv::merge(vector<Mat>({channels[0],channels[1],channels[2]}),RGB);
-    RGB.copyTo(out(Rect(0,0,patch.cols,patch.rows)));
-
-    cv::merge(vector<Mat>({channels[3],channels[3],channels[3]}),D);
-    D.copyTo(out(Rect(patch.cols,0,patch.cols,patch.rows)));
-
-    if(show) {imshow("R G B D",out); waitKey();}
-    return out;
-}
-
-void networkSolver::testKNN(vector<string> used_models)
-{
-
-    // Load the snapshot
-    caffe::Net<float> CNN(network_path + "manifold_wang.prototxt", caffe::TEST);
-    CNN.CopyTrainedLayersFrom(network_path + "manifold_iter_25000.caffemodel");
-
-    // Get the test data
-    Mat DBfeats, DBtest;
-    vector<Sample> temp_sum, templates;
+    // Get the training data
+    Mat DBfeats, DBtraining;
     for (string &seq : used_models)
     {
-        vector<Sample> temp_real(h5.read(hdf5_path + "realSamples_" + seq + ".h5"));
-        vector<Sample> temp_synth(h5.read(hdf5_path + "synthSamples_" + seq + ".h5"));
-        vector<Sample> temp_tmpl(h5.read(hdf5_path + "templates_" + seq + ".h5"));
-
-        // Crop the vector: real 50%, synthetic 70%
-        temp_real.erase(temp_real.begin(),temp_real.begin()+(temp_real.size()-1)*0.5);
-        temp_synth.erase(temp_synth.begin(),temp_synth.begin()+(temp_synth.size()-1)*0.7);
-
-        temp_sum.insert(temp_sum.end(), temp_real.begin(), temp_real.end());
-        temp_sum.insert(temp_sum.end(), temp_synth.begin(), temp_synth.end());
-
-        templates.insert(templates.end(), temp_tmpl.begin(), temp_tmpl.end());
-
+        DBtraining.push_back(eval::computeDescriptors(CNN, training_set[model_index[seq]]));
+        DBfeats.push_back(eval::computeDescriptors(CNN, templates[model_index[seq]]));
     }
-    DBtest.push_back(computeDescriptors(CNN, temp_sum));
-    DBfeats.push_back(computeDescriptors(CNN, templates));
 
     // Create a k-NN matcher
-    cv::Ptr<DescriptorMatcher> matcher = DescriptorMatcher::create("FlannBased");
+    cv::Ptr<DescriptorMatcher> matcher = DescriptorMatcher::create("BruteForce");
     matcher->add(DBfeats);
 
-    // Enter the infinite loop
-    while(true)
-    {
-        uniform_int_distribution<size_t> DBtestGen(0, DBtest.rows);
-        int DBtestId = DBtestGen(ran);
-        Mat testDescr = DBtest.row(DBtestId).clone();
+    // - match the DBtrainng
+    vector< vector<DMatch> > matches;
+    int knn = 3;
+    matcher->knnMatch(DBtraining, matches, knn);
 
-        // - match the DBtest
-        vector< vector<DMatch> > matches;
-        int knn=5;
-        matcher->knnMatch(testDescr, matches, knn);
+    maxSimKNNTmpl.assign(nr_objects, vector<vector<int>>(nr_training_poses, vector<int>()));
 
-        // - show the result
-        imshow("sceneSample",showRGBDPatch(temp_sum[DBtestId].data,false));
+    for (size_t linearId = 0; linearId < (unsigned)DBtraining.rows; ++linearId) {
 
-        for (DMatch &m : matches[0])
+        // - get the test set indices (1D -> 2D)
+        int query_object = linearId / nr_training_poses;
+        int query_pose = linearId % nr_training_poses;
+
+        for (int nn = 0; nn < knn; nn++)
         {
-                imshow("kNN",showRGBDPatch(templates[m.trainIdx].data,false));
-
-//                Quaternionf sampleQuat, kNNQuat;
-//                for (int i=0; i < 4; ++i)
-//                {
-//                    sampleQuat.coeffs()(i) = samples[0].label.at<float>(0,1+i);
-//                    kNNQuat.coeffs()(i) = DBfeats[m.trainIdx].label.at<float>(0,1+i);
-//                }
-
-//            // -- compute angle difference
-//            cout << "Angle difference: " << sampleQuat.angularDistance(kNNQuat) << endl;
+            int tmpl_object =  matches[linearId][nn].trainIdx / templates[0].size();
+            int tmpl_pose =  matches[linearId][nn].trainIdx % templates[0].size();
+#if 0
+            imshow("query",showRGBDPatch(training_set[query_object][query_pose].data,false));
+            imshow("simKNN",showRGBDPatch(templates[tmpl_object][tmpl_pose].data,false));
             waitKey();
+#endif
+
+            if (nn == 0) {
+                // - store the object and the pose to the maxSimKNNTmpl
+                maxSimKNNTmpl[query_object][query_pose].push_back(tmpl_object);
+                maxSimKNNTmpl[query_object][query_pose].push_back(tmpl_pose);
+            } else {
+                if (maxSimKNNTmpl[query_object][query_pose].size() < 4 && tmpl_object != query_object) {
+                    // - store the object and the pose to the maxSimKNNTmpl
+                    maxSimKNNTmpl[query_object][query_pose].push_back(tmpl_object);
+                    maxSimKNNTmpl[query_object][query_pose].push_back(tmpl_pose);
+                }
+            }
         }
     }
 }
 
+void networkSolver::readParam(string config)
+{
+    // Initialize the parser
+    boost::property_tree::ptree pt;
+    boost::property_tree::ini_parser::read_ini(config, pt);
+
+    // Read learning parameters
+    network_path = pt.get<string>("paths.network_path");
+    net_name = pt.get<string>("train.net_name");
+    num_epochs = pt.get<unsigned int>("train.num_epochs");
+    num_training_rounds = pt.get<unsigned int>("train.num_training_rounds");
+    learning_rate =  pt.get<float>("train.learning_rate");
+    momentum = pt.get<float>("train.momentum");
+    weight_decay =  pt.get<float>("train.weight_decay");
+    learning_policy = pt.get<string>("train.learning_policy");
+    step_size = pt.get<unsigned int>("train.step_size");
+    gamma = pt.get<float>("train.gamma");
+    gpu = pt.get<bool>("train.gpu");
+
+    binarization = pt.get<bool>("train.binarization");
+    binarization_epochs = pt.get<int>("train.binarization_epochs");
+    binarization_net_name = pt.get<string>("train.binarization_net_name");
+    rotInv = to_array<int>(pt.get<string>("input.rotInv"));
+    inplane = pt.get<bool>("input.inplane");
+    random_background = pt.get<bool>("input.random_background");
+
+    if (gpu) caffe::Caffe::set_mode(caffe::Caffe::GPU);
+    used_models = to_array<string>(pt.get<string>("input.used_models"));
+    models = to_array<string>(pt.get<string>("input.models"));
+
+    // Save dataset parameters
+    nr_objects = used_models.size();
+    nr_training_poses = db->getTrainingSetSize();
+    nr_template_poses = db->getTemplateSetSize();
+    nr_test_poses = db->getTestSetSize();
+
+    // For each object build a mapping from model name to index number
+    for (size_t i = 0; i < nr_objects; ++i) model_index[used_models[i]] = i;
+    // Global mapping
+    for (size_t i = 0; i < models.size(); ++i) global_model_index[models[i]] = i;
+
+}
+
+void networkSolver::computeMaxSimTmplInplane()
+{
+    // Calculate maxSimTmpl: find the 2 most similar templates for each object in the training set
+    maxSimTmpl.assign(nr_objects, vector<vector<int>>(nr_training_poses, vector<int>()));
+    for (size_t object = 0; object < nr_objects; ++object)
+    {
+        for (size_t training_pose = 0; training_pose < nr_training_poses; ++training_pose)
+        {
+            float best_dist = numeric_limits<float>::max();
+            float best_dist2 = numeric_limits<float>::max(); // second best
+            int sim_tmpl, sim_tmpl2;
+
+            // - find the first most similar template
+            for (size_t tmpl_pose = 0; tmpl_pose < nr_template_poses; tmpl_pose++)
+            {
+                float temp_dist = training_quats[object][training_pose].angularDistance(tmpl_quats[object][tmpl_pose]);
+                if (temp_dist >= best_dist) continue;
+                best_dist = temp_dist;
+                sim_tmpl = tmpl_pose;
+            }
+
+            // - push back the template
+            maxSimTmpl[object][training_pose].push_back(sim_tmpl);
+
+            // - find the second most similar template
+            for (size_t tmpl_pose = 0; tmpl_pose < nr_template_poses; tmpl_pose++)
+            {
+                float temp_dist = training_quats[object][training_pose].angularDistance(tmpl_quats[object][tmpl_pose]);
+                if (temp_dist >= best_dist2 || temp_dist == best_dist) continue;
+                best_dist2 = temp_dist;
+                sim_tmpl2 = tmpl_pose;
+            }
+
+            // - push back the template
+            maxSimTmpl[object][training_pose].push_back(sim_tmpl2);
+
+#if 0
+            imshow("query",showRGBDPatch(training_set[object][training_pose].data,false));
+            imshow("sim 1",showRGBDPatch(templates[object][maxSimTmpl[object][training_pose][0]].data,false));
+            imshow("sim 2",showRGBDPatch(templates[object][maxSimTmpl[object][training_pose][1]].data,false));
+            waitKey();
+#endif
+        }
+    }
+}
+
+void networkSolver::computeMaxSimTmpl()
+{
+    // Calculate maxSimTmpl: find the 2 most similar templates for each object in the training set
+    maxSimTmpl.assign(nr_objects, vector<vector<int>>(nr_training_poses, vector<int>()));
+    for (size_t object = 0; object < nr_objects; ++object)
+    {
+        for (size_t training_pose = 0; training_pose < nr_training_poses; ++training_pose)
+        {
+            float best_dist = numeric_limits<float>::min();
+            float best_dist2 = numeric_limits<float>::min(); // second best
+            int sim_tmpl, sim_tmpl2;
+            Vector3f training_tr(3), tmpl_tr(3);
+
+            for (size_t tr = 0; tr < 3; ++tr)
+                training_tr[tr] = training_set[object][training_pose].label.at<float>(0,5+tr);
+
+            // - find the first most similar template
+            for (size_t tmpl_pose = 0; tmpl_pose < nr_template_poses; tmpl_pose++)
+            {
+                for (size_t tr = 0; tr < 3; ++tr)
+                    tmpl_tr[tr] = templates[object][tmpl_pose].label.at<float>(0,5+tr);
+
+                float temp_dist = training_tr.dot(tmpl_tr);
+                if (temp_dist <= best_dist) continue;
+                best_dist = temp_dist;
+                sim_tmpl = tmpl_pose;
+            }
+
+            // - push back the template
+                maxSimTmpl[object][training_pose].push_back(sim_tmpl);
 
 
+            // - find the second most similar template
+            for (size_t tmpl_pose = 0; tmpl_pose < nr_template_poses; tmpl_pose++)
+            {
+                for (size_t tr = 0; tr < 3; ++tr)
+                    tmpl_tr[tr] = templates[object][tmpl_pose].label.at<float>(0,5+tr);
+
+                float temp_dist = training_tr.dot(tmpl_tr);
+                if (temp_dist <= best_dist2 || temp_dist == best_dist) continue;
+                best_dist2 = temp_dist;
+                sim_tmpl2 = tmpl_pose;
+            }
+
+            // - push back the template
+                maxSimTmpl[object][training_pose].push_back(sim_tmpl2);
+
+#if 0
+            imshow("query",showRGBDPatch(training_set[object][training_pose].data,false));
+            imshow("sim 1",showRGBDPatch(templates[object][maxSimTmpl[object][training_pose][0]].data,false));
+            imshow("sim 2",showRGBDPatch(templates[object][maxSimTmpl[object][training_pose][1]].data,false));
+            waitKey();
+#endif
+        }
+    }
+}

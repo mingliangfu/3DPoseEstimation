@@ -79,18 +79,18 @@ void SingletonPainter::clearBackground(float r,float g,float b)
     m_background << r,g,b;
 }
 /*********************************************************************************/
-void SingletonPainter::bindVBOs(vector<Vector3f> &vertex, vector<Vector3i> &faces, GLuint &vert, GLuint &ind)
+void SingletonPainter::bindVBOs(vector<Vec3f> &vertex, vector<Vec3i> &faces, GLuint &vert, GLuint &ind)
 {
     makeCurrent();
     glGenBuffers(1, &vert);
     glGenBuffers(1, &ind);
 
     glBindBuffer(GL_ARRAY_BUFFER, vert);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(Vector3f)*vertex.size(),vertex.data(),GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(Vec3f)*vertex.size(),vertex.data(),GL_STATIC_DRAW);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ind);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(Vector3i)*faces.size(),faces.data(),GL_STATIC_DRAW);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(Vec3i)*faces.size(),faces.data(),GL_STATIC_DRAW);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
     doneCurrent();
 }
@@ -99,8 +99,8 @@ void SingletonPainter::bindVBOs(vector<Vector3f> &vertex, vector<Vector3i> &face
 void SingletonPainter::drawVBOs(GLuint vert, GLuint ind, int count)
 {
     glBindBuffer(GL_ARRAY_BUFFER, vert);
-    glVertexPointer(3,GL_FLOAT,2*sizeof(Vector3f),0);
-    glColorPointer (3,GL_FLOAT,2*sizeof(Vector3f),reinterpret_cast<void*>(sizeof(Vector3f)));
+    glVertexPointer(3,GL_FLOAT,2*sizeof(Vec3f),0);
+    glColorPointer (3,GL_FLOAT,2*sizeof(Vec3f),reinterpret_cast<void*>(sizeof(Vec3f)));
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ind);
     if (ind==0) glDrawArrays(GL_POINTS,0,count);
     else        glDrawElements(GL_TRIANGLES,count,GL_UNSIGNED_INT,0);
