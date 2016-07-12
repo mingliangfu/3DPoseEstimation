@@ -63,7 +63,7 @@ layer {
  
 layer { 
   name: "relu1" 
-  type: "PReLU" 
+  type: "ELU" 
   bottom: "pool1" 
   top: "pool1" 
 } 
@@ -98,7 +98,7 @@ layer {
  
 layer { 
   name: "relu2" 
-  type: "PReLU" 
+  type: "ELU" 
   bottom: "pool2" 
   top: "pool2" 
 } 
@@ -119,7 +119,7 @@ layer {
  
 layer { 
   name: "relu_ip1" 
-  type: "PReLU" 
+  type: "ELU" 
   bottom: "ip1" 
   top: "ip1" 
 } 

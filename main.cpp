@@ -19,12 +19,12 @@ int main(int argc, char *argv[])
     }
     string config(argv[1]);
 
-    datasetManager db(config);
+    Gopnik::datasetManager db(config);
     db.createSceneSamplesAndTemplates();
     db.generateDatasets();
 
     // Initialize the solver
-    networkSolver solver(config, &db);
+    Gopnik::networkSolver solver(config, &db);
 
     // Train the network
     solver.trainNet(0);

@@ -16,6 +16,8 @@ using namespace std;
 using namespace cv;
 using namespace Eigen;
 
+namespace Gopnik
+{
 
 struct RenderView
 {
@@ -56,5 +58,7 @@ public:
     Matrix3f getRot(Vector3f center,Vector3f eye,Vector3f up);   
 
 };
+
+}
 
 
