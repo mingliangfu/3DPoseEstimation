@@ -39,7 +39,7 @@ Mat networkEvaluator::computeDescriptors(caffe::Net<float> &CNN, vector<Sample> 
             }
             // Copy data memory into Caffe input layer, process batch and copy result back
             input_layer->set_cpu_data(data.data());
-            vector< caffe::Blob<float>* > out = CNN.Forward();
+            vector< caffe::Blob<float>* > out = CNN.ForwardPrefilled();
 
             for (size_t j=0; j < currIdxs.size(); ++j)
                 memcpy(descs.ptr<float>(currIdxs[j]), out[0]->cpu_data() + j*desc_dim, desc_dim*sizeof(float));
@@ -192,7 +192,8 @@ void networkEvaluator::computeHistogram(caffe::Net<float> &CNN, const vector<vec
 
      vector<float> bins = {-1, 0, 10, 20, 40, 180};
      vector<float> histo(bins.size(), 0);
-     float mean_angle = 0;
+     float median_angle, mean_angle = 0;
+     vector<float> diff_vector;
 
      for (size_t linearId = 0; linearId < (unsigned)DBtest.rows; ++linearId) {
 
@@ -230,6 +231,7 @@ void networkEvaluator::computeHistogram(caffe::Net<float> &CNN, const vector<vec
                  diff = abs(acos(query_quat.toRotationMatrix()(2,2)) - acos(knn_quat.toRotationMatrix()(2,2)))*180.f/M_PI;
              }
              mean_angle += diff;
+             diff_vector.push_back(diff);
 
              // Exact match?
              Quaternionf tmpl_quat;
@@ -252,13 +254,16 @@ void networkEvaluator::computeHistogram(caffe::Net<float> &CNN, const vector<vec
          }
      }
 
+     // Get mean angular difference
      mean_angle /= DBtest.rows;
+     // Get median angular difference
+     sort(diff_vector.begin(), diff_vector.end());
+     median_angle = diff_vector[(diff_vector.size()-1)/2];
 
      float total = histo.front() + histo.back();
      for (float &i : histo) i /= total;
 
      // Write stats to the file
-
      // - set the file name
      // -- initialize the parser
      boost::property_tree::ptree pt;
@@ -279,11 +284,11 @@ void networkEvaluator::computeHistogram(caffe::Net<float> &CNN, const vector<vec
      stat_file << "Iteration: " << iter << endl;
      for (size_t i = 0; i < histo.size(); ++i)
          stat_file << "<" << bins[i] << "\t";
-     stat_file << "mean" << endl;
+     stat_file << "mean" << "\t" << "median" << endl;
 
      for (size_t i = 0; i < histo.size(); ++i)
          stat_file << std::setprecision(3) << histo[i]*100 << "\t";
-     stat_file << mean_angle << endl;
+     stat_file << mean_angle << "\t" << median_angle << endl;
 
      stat_file.close();
 }

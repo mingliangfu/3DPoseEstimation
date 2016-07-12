@@ -11,6 +11,11 @@
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/ini_parser.hpp>
 
+#include <condition_variable>
+#include <mutex>
+#include <thread>
+#include <queue>
+
 #include "caffe/caffe.hpp"
 #include "caffe/sgd_solvers.hpp"
 #include "model.h"
@@ -29,6 +34,8 @@ class networkSolver
 {
 public:
     networkSolver(string config, datasetManager *db);
+    void buildBatchQueue(size_t batch_size, size_t triplet_size, size_t epoch_iter,
+                                        size_t slice, size_t channels, size_t target_size, std::queue<vector<float>> &batch_queue);
     vector<Sample> buildBatch(int batch_size, unsigned int triplet_size, int iter, bool bootstrapping);
     void trainNet(int resume_iter=0);
     void binarizeNet(int resume_iter=0);
@@ -47,6 +54,11 @@ public:
     unordered_map<string,int> model_index, global_model_index;
     vector<int> rotInv;
     unsigned int nr_objects, nr_training_poses, nr_template_poses, nr_test_poses;
+
+    // Thread variables
+    size_t thread_iter;
+    std::condition_variable cond;
+    std::mutex queue_mutex;
 
     // Const references to db objects
     datasetManager *db;
