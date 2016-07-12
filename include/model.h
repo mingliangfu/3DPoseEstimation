@@ -4,7 +4,6 @@
 
 #include <Eigen/Core>
 #include <opencv2/core.hpp>
-
 #include "painter.h"
 
 using namespace cv;
@@ -12,8 +11,13 @@ using namespace std;
 using namespace Eigen;
 
 
+namespace Gopnik {
+
+
+
 class Model : public PaintObject
 {
+
 public:
 
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -37,24 +41,27 @@ public:
 
     vector<bool> computeEdgePoints();
 
-    vector<Vector3f, Eigen::aligned_allocator<Vector3f> > &getPoints() {return m_points;}
-    vector<Vector3f, Eigen::aligned_allocator<Vector3f> > &getColors() {return m_colors;}
-    vector<Vector3f, Eigen::aligned_allocator<Vector3f> > &getNormals(){return m_normals;}
-    vector<Vec3i> &getFaces() {return m_faces;}
+    vector<Vector3f> &getPoints() {return m_points;}
+    vector<Vector3f> &getColors() {return m_colors;}
+    vector<Vector3f> &getNormals(){return m_normals;}
+    vector<Vector3i> &getFaces() {return m_faces;}
 
     float getCubeSize() {return m_cube_size;}
-    bool loadFile(string filename);
+    bool loadPLY(string filename);
     void savePLY(string filename);
 
     Vector3f bb_min,bb_max, centroid;
     Matrix<float,3,8> boundingBox;
 
     // The data of the model
-    vector<Vector3f, Eigen::aligned_allocator<Vector3f> > m_normals, m_colors, m_points, m_localCoordColors;
-    vector<Vec3i> m_faces;
-    vector<Vec2f> m_tcoords;
-    Mat m_texture;
+    vector<Vector3f> m_normals, m_colors, m_points, m_localCoordColors;
+    vector<Vector3i> m_faces;
 
+    // Subsampled cloud for intermediate computations
+    vector<Vector3f> m_subpoints, m_subnormals;
+    vector<Vec3b> m_subcolors;
+
+    
 private:
 
     // Length of voxel [m] for subsampling.
@@ -65,8 +72,9 @@ private:
 
     // OpenGL specifics for fast rendering
     GLuint m_vbo_vertices, m_vbo_indices;
-    vector<Vec3f> m_vertex_data;
+    vector<Vector3f> m_vertex;
 
 }; 
 
+}
 

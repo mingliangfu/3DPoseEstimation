@@ -25,16 +25,22 @@ using namespace cv;
 using namespace boost;
 typedef networkEvaluator eval;
 
+
+namespace Gopnik
+{
+
 class networkSolver
 {
 public:
     networkSolver(string config, datasetManager *db);
-    vector<Sample> buildBatch(int batch_size, unsigned int triplet_size, int iter, bool bootstrapping);
+    vector<Gopnik::Sample> buildBatch(int batch_size, unsigned int triplet_size, int iter, bool bootstrapping);
     void trainNet(int resume_iter=0);
     void binarizeNet(int resume_iter=0);
 
     bool computeKNN(caffe::Net<float> &CNN);
-    void visualizeKNN(caffe::Net<float> &CNN, vector<string> test_models, const vector<vector<Sample> > &test_set, const vector<vector<Sample> > &templates);
+    void visualizeKNN(caffe::Net<float> &CNN, vector<string> test_models,
+                      const vector<vector<Gopnik::Sample> > &test_set,
+                      const vector<vector<Gopnik::Sample> > &templates);
     bool bootstrap(caffe::Net<float> &CNN, int iter);
 
     void readParam(string config);
@@ -50,7 +56,7 @@ public:
 
     // Const references to db objects
     datasetManager *db;
-    const vector<vector<Sample>>& templates, training_set, test_set;
+    const vector<vector<Gopnik::Sample>>& templates, training_set, test_set;
     const vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>>& tmpl_quats, training_quats, test_quats;
 
     // Config parameters
@@ -62,4 +68,5 @@ public:
     bool gpu, binarization, inplane, random_background;
 };
 
+}
 #endif // NETWORKSOLVER_H

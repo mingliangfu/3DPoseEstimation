@@ -1,4 +1,7 @@
-#include "networksolver.h"
+#include "../include/networksolver.h"
+
+namespace Gopnik
+{
 
 networkSolver::networkSolver(string config, datasetManager* db): db(db), templates(db->getTemplateSet()), training_set(db->getTrainingSet()),
                                                                  test_set(db->getTestSet()), tmpl_quats(db->getTmplQuats()),
@@ -9,9 +12,9 @@ networkSolver::networkSolver(string config, datasetManager* db): db(db), templat
     readParam(config);
 }
 
-vector<Sample> networkSolver::buildBatch(int batch_size, unsigned int triplet_size, int iter, bool bootstrapping)
+vector<Gopnik::Sample> networkSolver::buildBatch(int batch_size, unsigned int triplet_size, int iter, bool bootstrapping)
 {
-    vector<Sample> batch;
+    vector<Gopnik::Sample> batch;
     size_t puller = 0, pusher0 = 0, pusher1 = 0, pusher2 = 0;
     TripletWang triplet;
 
@@ -162,7 +165,7 @@ void networkSolver::trainNet(int resume_iter)
     const int img_size = slice*channels;
     vector<float> data(batch_size*img_size,0), labels(batch_size,0);
 
-    vector<Sample> batch;
+    vector<Gopnik::Sample> batch;
     unsigned int triplet_size = 5;
     unsigned int epoch_iter = nr_objects * nr_training_poses / (batch_size/triplet_size);
 
@@ -201,7 +204,7 @@ void networkSolver::trainNet(int resume_iter)
         testCNN.CopyTrainedLayersFrom(net_name + "_iter_" + to_string(snapshot_iter) + ".caffemodel");
 
         if (random_background) {
-            vector<vector<Sample>> copy_tmpl(templates.size(), vector<Sample>(templates[0].size()));
+            vector<vector<Gopnik::Sample>> copy_tmpl(templates.size(), vector<Gopnik::Sample>(templates[0].size()));
             for (int object = 0; object < templates.size(); ++object) {
                 for (int pose = 0; pose < templates[0].size(); ++pose) {
                     copy_tmpl[object][pose].copySample(templates[object][pose]);
@@ -250,7 +253,7 @@ void networkSolver::binarizeNet(int resume_iter)
     const int img_size = slice*channels;
     vector<float> data(batch_size*img_size,0);
 
-    vector<Sample> batch;
+    vector<Gopnik::Sample> batch;
     unsigned int triplet_size = 5;
     unsigned int epoch_iter = nr_objects * nr_training_poses / (batch_size/triplet_size);
 
@@ -480,4 +483,5 @@ void networkSolver::computeMaxSimTmpl()
 #endif
         }
     }
+}
 }

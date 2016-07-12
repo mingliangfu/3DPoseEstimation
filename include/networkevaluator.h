@@ -22,11 +22,17 @@ class networkEvaluator
 {
 public:
     networkEvaluator();
-    static Mat computeDescriptors(caffe::Net<float> &CNN, vector<Sample> samples);
+    static Mat computeDescriptors(caffe::Net<float> &CNN, vector<Gopnik::Sample> samples);
     static void computeKNNAccuracy(vector<vector<vector<int> > > &maxSimTmpl, vector<vector<vector<int> > > &maxSimKNNTmpl);
-    static void computeHistogram(caffe::Net<float> &CNN, const vector<vector<Sample>> &templates, const vector<vector<Sample>> &training_set, const vector<vector<Sample>> &test_set, vector<int> rotInv, string config, int iter);
-    static void visualizeManifold(caffe::Net<float> &CNN, const vector<vector<Sample> > &templates, int iter);
-    static void visualizeKNN(caffe::Net<float> &CNN, const vector<vector<Sample>> &test_set, const vector<vector<Sample>> &templates);
+    static void computeHistogram(caffe::Net<float> &CNN,
+                                 const vector<vector<Gopnik::Sample>> &templates,
+                                 const vector<vector<Gopnik::Sample>> &training_set,
+                                 const vector<vector<Gopnik::Sample>> &test_set,
+                                 vector<int> rotInv, string config, int iter);
+    static void visualizeManifold(caffe::Net<float> &CNN, const vector<vector<Gopnik::Sample> > &templates, int iter);
+    static void visualizeKNN(caffe::Net<float> &CNN,
+                             const vector<vector<Gopnik::Sample>> &test_set,
+                             const vector<vector<Gopnik::Sample>> &templates);
 };
 
 #endif // NETWORKEVALUATOR_H

@@ -7,12 +7,15 @@
 #include <opencv2/viz.hpp>
 #include <opencv2/features2d.hpp>
 
-#include "painter.h"
-#include "sphere.h"
+#include "../include/painter.h"
+#include "../include/sphere.h"
 
 
 using namespace std;
 
+
+namespace Gopnik
+{
 
 SphereRenderer::SphereRenderer(Matrix3f &cam){init(cam);}
 SphereRenderer::SphereRenderer(){m_camera.setZero();}
@@ -241,4 +244,4 @@ vector<Vector3f> SphereRenderer::initSphere(int inc_steps, int azi_steps)
     return sphere;
 }
 
-/************************ END OF FILE **************************************/
+}

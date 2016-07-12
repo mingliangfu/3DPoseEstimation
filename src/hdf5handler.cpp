@@ -1,13 +1,20 @@
-#include "hdf5handler.h"
+
+
+#include "../include/hdf5handler.h"
+
+
+namespace Gopnik
+{
+
 
 hdf5Handler::hdf5Handler()
 {
 
 }
 
-vector<Sample> hdf5Handler::read(string filename)
+vector<Gopnik::Sample> hdf5Handler::read(string filename)
 {
-    vector<Sample> samples;
+    vector<Gopnik::Sample> samples;
     try
     {
         H5::H5File file(filename, H5F_ACC_RDONLY);
@@ -69,7 +76,7 @@ vector<Sample> hdf5Handler::read(string filename)
     return samples;
 }
 
-void hdf5Handler::write(string filename, vector<Sample> &samples)
+void hdf5Handler::write(string filename, vector<Gopnik::Sample> &samples)
 {
     if (samples.empty())
     {
@@ -331,4 +338,6 @@ vector<Isometry3f,Eigen::aligned_allocator<Isometry3f>> hdf5Handler::readBBTrans
         error.printError();
         assert(0);
     }
+}
+
 }

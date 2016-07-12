@@ -20,40 +20,43 @@
 #include <boost/filesystem.hpp>
 #include <boost/program_options.hpp>
 
-#include "include/model.h"
+
+#include "../../detectionTUM/include/sphere.h"
+#include "../../detectionTUM/include/detection_object.h"
+
 #include "include/hdf5handler.h"
 #include "include/datasetmanager.h"
 #include "include/networkevaluator.h"
 #include "include/networksolver.h"
 #include "include/utilities.h"
-#include "include/icp.h"
+
 
 using namespace std;
 using namespace cv;
 using namespace Eigen;
 using namespace boost;
-
+using namespace detectionTUM;
 
 #define SQR(x) ((x)*(x))
 
 Matrix3f cam;
-hdf5Handler h5;
+Gopnik::hdf5Handler h5;
 std::default_random_engine rand_eng;
 
 
-float linemod_error(Isometry3f &gt, Isometry3f &pose, Model &m, string name)
+float linemod_error(Isometry3f &gt, Isometry3f &pose, vector<Vector3f> &points, string name)
 {
     float error=0;
     if(name=="cup" || name=="bowl" || name=="eggbox" || name=="glue")
-        for (Vector3f &p : m.getPoints())
+        for (Vector3f &p : points)
         {
             float min_error = numeric_limits<float>::max();
-            for (Vector3f &l : m.getPoints())
+            for (Vector3f &l : points)
                 min_error = min(min_error,(pose*p-gt*l).norm());
             error += min_error;
         }
-    else for (Vector3f &p : m.getPoints()) error += (pose*p-gt*p).norm();
-    return error / m.getPoints().size();
+    else for (Vector3f &p : points) error += (pose*p-gt*p).norm();
+    return error / points.size();
 }
 
 
@@ -142,9 +145,9 @@ struct Hypo
     Mat col, dep, nor;
     pair<int,int> offset;
     vector<Point> points;
-    vector<Vector3f, Eigen::aligned_allocator<Vector3f> > cloud_pts;
+    vector<Vector3f> cloud_pts;
     View *NN;
-    IcpStruct icp_ret;
+    detectionTUM::IcpStruct icp_ret;
     Point pos2D;
     float depth_sim;
     int NNIdx, sampleIdx;
@@ -213,14 +216,14 @@ void binarizeDescriptors(Mat &descs)
     binDescs.copyTo(descs);
 }
 
-vector<Sample> extractSceneSamples(vector<Frame,Eigen::aligned_allocator<Frame>> &frames, Matrix3f &cam, int index)
+vector<Gopnik::Sample> extractSceneSamples(vector<Frame> &frames, Matrix3f &cam, int index)
 {
-    vector<Sample> samples;
+    vector<Gopnik::Sample> samples;
     for (Frame &f : frames)
     {
 
         // Instead of taking object centroid, take the surface point as central sample point
-        Vector3f projCentroid = cam*f.gt.translation();
+        Vector3f projCentroid = cam*f.gt[0].second.translation();
         projCentroid /= projCentroid(2);
 
         float z = f.depth.at<float>(projCentroid(1),projCentroid(0));
@@ -228,13 +231,13 @@ vector<Sample> extractSceneSamples(vector<Frame,Eigen::aligned_allocator<Frame>>
 
         depth2normals(f.depth,f.normals,cam);
 
-        Sample s;
+        Gopnik::Sample s;
         s.data = samplePatchWithScale(f.color,f.depth,f.normals, projCentroid(0),projCentroid(1),z,cam(0,0),cam(1,1));
 
         // Build 5-dimensional label: model index + quaternion
         s.label = Mat(1,5,CV_32F);
         s.label.at<float>(0,0) = index;
-        Quaternionf q(f.gt.linear());
+        Quaternionf q(f.gt[0].second.linear());
         for (int i=0; i < 4; ++i)
             s.label.at<float>(0,1+i) = q.coeffs()(i);
 
@@ -248,7 +251,8 @@ vector<Sample> extractSceneSamples(vector<Frame,Eigen::aligned_allocator<Frame>>
 
 map<int, vector<View, Eigen::aligned_allocator<View> > > tpl_views;
 
-void createTemplatePoints(Model &model,Matrix3f &cam)
+/*
+void createTemplatePoints(detectionTUM::Model &model,Matrix3f &cam)
 {
 
     // Create synthetic views
@@ -256,7 +260,7 @@ void createTemplatePoints(Model &model,Matrix3f &cam)
     Vector3f scales(0.6, 0.1, 1.11);     // Render from 0.4 meters
     Vector3f in_plane_rots(-45,15,45);  // Render in_plane_rotations from -45 degree to 45 degree in 15degree steps
     vector<RenderView, Eigen::aligned_allocator<RenderView> > views =
-            sphere.createViews(model,2,scales,in_plane_rots,true,false,false);    // Equidistant sphere sampling with recursive level subdiv
+            sphere.createViews(model,2,scales,in_plane_rots,true,false);    // Equidistant sphere sampling with recursive level subdiv
 
     for (RenderView &v : views)
     {
@@ -279,6 +283,7 @@ void createTemplatePoints(Model &model,Matrix3f &cam)
     for (auto &k : tpl_views) cerr << k.first << endl;
 
 }
+*/
 
 void randomColorFill(Mat &patch)
 {
@@ -299,38 +304,48 @@ void randomColorFill(Mat &patch)
         }
 }
 
-vector<Sample> createTemplates(Model &model,Matrix3f &cam, int index, int subdiv)
+vector<Gopnik::Sample> createTemplates(DetectionObject &obj,Matrix3f &cam, int index, int subdiv)
 {
+    vector<Gopnik::Sample> samples;
+
+    vector<Isometry3f, Eigen::aligned_allocator<Isometry3f> > poses;
 
     // Create synthetic views
-    SphereRenderer sphere(cam);
-    Vector3f scales(0.4, 1.1, 1.0);     // Render from 0.4 meters
-    Vector3f in_plane_rots(-45,15,45);  // Render in_plane_rotations from -45 degree to 45 degree in 15degree steps
-    vector<RenderView, Eigen::aligned_allocator<RenderView> > views =
-            sphere.createViews(model,subdiv,scales,in_plane_rots,true,false,false);    // Equidistant sphere sampling with recursive level subdiv
+    vector<float> rots({-45,-30,-15,0,15,30,45});
+    detectionTUM::SphereRenderer renderer(cam);
+    vector<Vector3f> sphere = renderer.initSphere(subdiv);
+        for(Vector3f &pos : sphere)
+        {
+            if((pos(2) < 0)) continue;  // Skip the lower hemisphere of the object
+            for(float curr_rot : rots)
+                poses.push_back(renderer.createTransformation(pos,0.4,curr_rot));
+        }
 
-    vector<Sample> samples;
-    for (RenderView &v : views)
+    for (Isometry3f &pose : poses)
     {
+        Mat col,dep;
+        renderer.renderView(obj,pose,col,dep,false);
+
+
         // Instead of taking object centroid, take the surface point as central sample point
-        float z = v.dep.at<float>(cam(1,2),cam(0,2));
-        assert(z>0.0f);
+        float z = dep.at<float>(cam(1,2),cam(0,2));
+        if (z <=0.0f) throw;
         //z = v.pose.translation()(2);
 
         Mat normals;
-        depth2normals(v.dep,normals,cam);
+        depth2normals(dep,normals,cam);
 
-        Sample sample;
-        sample.data = samplePatchWithScale(v.col,v.dep,normals,cam(0,2),cam(1,2),z,cam(0,0),cam(1,1));
+        Gopnik::Sample sample;
+        sample.data = samplePatchWithScale(col,dep,normals,cam(0,2),cam(1,2),z,cam(0,0),cam(1,1));
         randomColorFill(sample.data);
 
         // Build 6-dimensional label: model index + quaternion + z-offset
         sample.label = Mat(1,6,CV_32F);
         sample.label.at<float>(0,0) = index;
-        Quaternionf q(v.pose.linear());
+        Quaternionf q(pose.linear());
         for (int i=0; i < 4; ++i)
             sample.label.at<float>(0,1+i) = q.coeffs()(i);
-        sample.label.at<float>(0,5) = v.pose.translation()(2)-z;
+        sample.label.at<float>(0,5) = pose.translation()(2)-z;
 
         samples.push_back(sample);
     }
@@ -375,7 +390,7 @@ Benchmark loadLinemodBenchmark(string linemod_path, string sequence, int count =
         assert(pose.is_open());
         for (int k=0; k < 4;k++)
             for(int l=0; l < 4;l++)
-                pose >> frame.gt.matrix()(k,l);
+                pose >> frame.gt[0].second.matrix()(k,l);
         bench.frames.push_back(frame);
     }
 
@@ -389,52 +404,52 @@ Benchmark loadLinemodBenchmark(string linemod_path, string sequence, int count =
 
 
 
-void createSceneSamplesAndTemplates(datasetManager &ds)
+void createSceneSamplesAndTemplates(Gopnik::datasetManager &ds)
 {
 
-    for (size_t modelId = 0; modelId < ds.models.size(); ++modelId)
+    for (size_t modelId = 0; modelId < ds.getModels().size(); ++modelId)
     {
 
-        string model_name = ds.models[modelId];
+        string model_name = ds.getModels()[modelId];
 
         clog << "\nCreating samples and patches for " << model_name << ":" << endl;
 
         // - load model
-        Model model;
-        model.loadFile(ds.dataset_path + model_name + ".ply");
+        DetectionObject model;
+        model.loadModel(ds.getDatasetPath() + model_name + ".ply");
 
         // - load frames of benchmark and visualize
-        Benchmark bench = loadLinemodBenchmark(ds.dataset_path, model_name);
+        Benchmark bench = loadLinemodBenchmark(ds.getDatasetPath(), model_name);
         cam = bench.cam;
 
         // === Real data ===
         // - for each scene frame, extract RGBD sample
-        vector<Sample> realSamples = extractSceneSamples(bench.frames,bench.cam,modelId);
+        vector<Gopnik::Sample> realSamples = extractSceneSamples(bench.frames,bench.cam,modelId);
 
         // - shuffle the samples
         random_shuffle(realSamples.begin(), realSamples.end());
 
         // - store realSamples to HDF5 files
-        ds.h5.write(ds.hdf5_path + "realSamples_" + model_name +".h5", realSamples);
+        h5.write(ds.getHDF5Path() + "realSamples_" + model_name +".h5", realSamples);
         //for (Sample &s : realSamples) showRGBDPatch(s.data);
 
         // === Synthetic data ===
         clog << "  - render synthetic data:" << endl;
         // - create synthetic samples and templates
         int subdivTmpl = 2; // sphere subdivision factor for templates
-        vector<Sample> templates = createTemplates(model,bench.cam,modelId, subdivTmpl);
-        vector<Sample> synthSamples = createTemplates(model,bench.cam,modelId, subdivTmpl+1);
+        vector<Gopnik::Sample> templates = createTemplates(model,bench.cam,modelId, subdivTmpl);
+        vector<Gopnik::Sample> synthSamples = createTemplates(model,bench.cam,modelId, subdivTmpl+1);
 
         // - store realSamples to HDF5 files
-        ds.h5.write(ds.hdf5_path + "templates_" + model_name + ".h5", templates);
-        ds.h5.write(ds.hdf5_path + "synthSamples_" + model_name + ".h5", synthSamples);
+        h5.write(ds.getHDF5Path() + "templates_" + model_name + ".h5", templates);
+        h5.write(ds.getHDF5Path() + "synthSamples_" + model_name + ".h5", synthSamples);
         //for (Sample &s : templates) showRGBDPatch(s.data);
 
     }
 }
 
 
-void renderExtract(vector<Hypo, Eigen::aligned_allocator<Hypo> > &hypos, Mat &cloud, SphereRenderer &renderer,Model &m)
+void renderExtract(vector<Hypo, Eigen::aligned_allocator<Hypo> > &hypos, Mat &cloud, SphereRenderer &renderer,DetectionObject &m)
 {
     for (Hypo &h : hypos) h.offset = renderer.renderView(m,h.pose,h.col,h.dep);
     tbb::parallel_for<size_t>(0, hypos.size(), [&] (size_t i)
@@ -459,7 +474,7 @@ void renderExtract(vector<Hypo, Eigen::aligned_allocator<Hypo> > &hypos, Mat &cl
 
 int main(int argc, char *argv[])
 {
-
+/*
     Model m;
     m.loadFile("optimized_tsdf_texture_mapped_mesh.obj");
 
@@ -470,17 +485,17 @@ int main(int argc, char *argv[])
         for (Vec2f t : m.m_tcoords) cerr << t << endl;
         waitKey();
     }
-
+*/
     string config_file = "manifold_rgbnor_16.ini";
 
-    datasetManager dm("configs/" + config_file);
+    Gopnik::datasetManager dm("configs/" + config_file);
     dm.generateDatasets();
-    networkSolver solver("configs/" + config_file,&dm);
+    Gopnik::networkSolver solver("configs/" + config_file,&dm);
 
     //createSceneSamplesAndTemplates(dm);
 
 
-    loadParams(dm.dataset_path);
+    loadParams(dm.getDatasetPath());
 
     bool binary = solver.binarization;
 
@@ -503,18 +518,15 @@ int main(int argc, char *argv[])
     }
     string seq = "can";
 
-    Model model;
-    model.loadFile(dm.dataset_path + seq + ".ply");
-    ICP icp;
-    bool icp_dump = icp.load3DTransform(seq+".icp");
-    icp.setData(model);
-    if (!icp_dump) icp.dump3DTransform(seq+".icp");
+    detectionTUM::DetectionObject obj;
+    obj.loadModel(dm.getDatasetPath() + seq + ".ply");
 
 
-    Benchmark bench = loadLinemodBenchmark(dm.dataset_path,seq);
+
+    Benchmark bench = loadLinemodBenchmark(dm.getDatasetPath(),seq);
     cam = bench.cam;
 
-    vector<Sample> tpls = createTemplates(model,cam,0,2);
+    vector<Gopnik::Sample> tpls = createTemplates(obj,cam,0,2);
 
 
     Mat DB = networkEvaluator::computeDescriptors(*net,tpls);
@@ -538,7 +550,7 @@ int main(int argc, char *argv[])
     float thresh = rgbdnor_bin_thresholds[seq];
     SphereRenderer renderer(cam);
 
-    createTemplatePoints(model,cam);
+    //createTemplatePoints(model,cam);
 
     float best_thresh = 0.f;
     float hit_count = 0;
@@ -553,8 +565,8 @@ int main(int argc, char *argv[])
 
         vector<SceneSample, Eigen::aligned_allocator<SceneSample> > scene_samples = sampleScene(f.color,f.depth,f.normals,8);
 
-        vector<Sample> patches;
-        for (auto &s : scene_samples) {Sample tmp; tmp.data = s.patch; patches.push_back(tmp);};
+        vector<Gopnik::Sample> patches;
+        for (auto &s : scene_samples) {Gopnik::Sample tmp; tmp.data = s.patch; patches.push_back(tmp);};
 
         Mat queries = networkEvaluator::computeDescriptors(*net,patches);
         if (binary) binarizeDescriptors(queries);
@@ -589,6 +601,8 @@ int main(int argc, char *argv[])
         f.depth.setTo(0, f.depth>1.2f);
         depth2cloud(f.depth,f.cloud,cam);
 
+
+        /*
         tbb::parallel_for<size_t>(0, hypos.size(), [&] (size_t i)
         {
             Hypo &h = hypos[i];
@@ -631,6 +645,7 @@ int main(int argc, char *argv[])
 
             renderExtract(hypos, f.cloud, renderer,model);
         }
+        */
 
 #if 1
         tbb::parallel_for<size_t>(0, hypos.size(), [&] (size_t i)
@@ -671,7 +686,7 @@ int main(int argc, char *argv[])
         for (Hypo &h : hypos)
         {
             if (h.killed) continue;
-            if(linemod_error(f.gt,h.pose,model,seq)>0.1f*diameters[seq]) continue;
+            if(linemod_error(f.gt[0].second,h.pose,obj.model.getPoints(),seq)>0.1f*diameters[seq]) continue;
             found = true;
             cerr << h.distance << " \t " << h.depth_sim << " \t " << h.icp_ret.error << endl;
             min_thresh = std::min(min_thresh,h.distance);
@@ -690,10 +705,9 @@ int main(int argc, char *argv[])
             for (Hypo &h : hypos)
             {
                 if (h.killed) continue;
-                if (best_hypo.depth_sim < h.depth_sim)
-                    best_hypo = h;
+                if (best_hypo.depth_sim < h.depth_sim) best_hypo = h;
             }
-            if(linemod_error(f.gt,best_hypo.pose,model,seq)<=0.1f*diameters[seq]) correct_count++;
+            if(linemod_error(f.gt[0].second,best_hypo.pose,obj.model.getPoints(),seq)<=0.1f*diameters[seq]) correct_count++;
         }
 
     }

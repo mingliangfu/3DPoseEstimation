@@ -1,10 +1,10 @@
-#include "include/networkevaluator.h"
+#include "../include/networkevaluator.h"
 
 networkEvaluator::networkEvaluator()
 {
 }
 
-Mat networkEvaluator::computeDescriptors(caffe::Net<float> &CNN, vector<Sample> samples)
+Mat networkEvaluator::computeDescriptors(caffe::Net<float> &CNN, vector<Gopnik::Sample> samples)
 {
     caffe::Blob<float>* input_layer = CNN.input_blobs()[0];
     const size_t batch_size = input_layer->num();
@@ -50,7 +50,7 @@ Mat networkEvaluator::computeDescriptors(caffe::Net<float> &CNN, vector<Sample> 
     return descs;
 }
 
-void networkEvaluator::visualizeManifold(caffe::Net<float> &CNN, const vector<vector<Sample>> &templates, int iter)
+void networkEvaluator::visualizeManifold(caffe::Net<float> &CNN, const vector<vector<Gopnik::Sample>> &templates, int iter)
 {
     std::random_device ran;
     Mat DBfeats;
@@ -86,7 +86,8 @@ void networkEvaluator::visualizeManifold(caffe::Net<float> &CNN, const vector<ve
     visualizer.saveScreenshot("manifold_" + to_string(iter) + ".png");
 }
 
-void networkEvaluator::visualizeKNN(caffe::Net<float> &CNN, const vector<vector<Sample>> &test_set, const vector<vector<Sample>> &templates)
+void networkEvaluator::visualizeKNN(caffe::Net<float> &CNN,
+                                    const vector<vector<Gopnik::Sample>> &test_set, const vector<vector<Gopnik::Sample>> &templates)
 {
     // Get the test data: subset of the used_models
     Mat DBfeats, DBtest;
@@ -170,7 +171,10 @@ void networkEvaluator::computeKNNAccuracy(vector<vector<vector<int>>> &maxSimTmp
     cout << "Inter-class accuracy: " << inter/(float)(nr_objects*nr_training_poses)*100 << endl;
 }
 
-void networkEvaluator::computeHistogram(caffe::Net<float> &CNN, const vector<vector<Sample>> &templates, const vector<vector<Sample>> &training_set, const vector<vector<Sample>> &test_set, vector<int> rotInv, string config, int iter)
+void networkEvaluator::computeHistogram(caffe::Net<float> &CNN,
+                                        const vector<vector<Gopnik::Sample>> &templates,
+                                        const vector<vector<Gopnik::Sample>> &training_set,
+                                        const vector<vector<Gopnik::Sample>> &test_set, vector<int> rotInv, string config, int iter)
 {
     // Get the test data
      Mat DBfeats, DBtest;

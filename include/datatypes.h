@@ -12,25 +12,14 @@
 #include <iostream>
 #include <iomanip>
 
+#include "utilities.h"
+
 
 using namespace Eigen;
 using namespace std;
 using namespace cv;
 
-struct Frame
-{
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-    int nr;
-    Mat color, depth, cloud, mask, normals;
-    Isometry3f gt;
-};
 
-struct Benchmark
-{
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-    vector<Frame, Eigen::aligned_allocator<Frame> > frames;
-    Matrix3f cam;
-};
 
 struct Background
 {
@@ -38,29 +27,21 @@ struct Background
 };
 
 
-struct Sample
-{
-    Mat data, label;
-    void copySample(Sample sample)
-    {
-        sample.data.copyTo(this->data);
-        this->label = sample.label;
-    }
-};
+
 
 struct Triplet
 {
-    Sample anchor, puller, pusher;
+    Gopnik::Sample anchor, puller, pusher;
 };
 
 struct TripletWang
 {
-    Sample anchor, puller, pusher0, pusher1, pusher2;
+    Gopnik::Sample anchor, puller, pusher0, pusher1, pusher2;
 };
 
 struct Pair
 {
-    Sample anchor, puller;
+    Gopnik::Sample anchor, puller;
 };
 
 struct TripletsPairs

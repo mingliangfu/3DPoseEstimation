@@ -7,15 +7,17 @@
 #include <boost/filesystem.hpp>
 
 #include <opencv2/viz.hpp>
-#include <opencv2/highgui.hpp>
 
-#include "model.h"
-#include "painter.h"
+#include "../include/model.h"
+#include "../include/painter.h"
 
 
 using namespace std;
 
 #define USE_VBO
+
+namespace Gopnik
+{
 
 /***************************************************************************/
 
@@ -55,15 +57,15 @@ void Model::paint()
 void Model::bindVBOs()
 {
     // Interleaving vertex and color data for faster rendering
-    m_vertex_data.resize(m_points.size()*2);
+    m_vertex.resize(m_points.size()*2);
     for (uint i=0; i < m_points.size();++i)
     {
-        memcpy(&m_vertex_data[i*2+0], m_points[i].data(),sizeof(Vec3f));
-        memcpy(&m_vertex_data[i*2+1], m_colors[i].data(),sizeof(Vec3f));
+        m_vertex[i*2+0] = m_points[i];
+        m_vertex[i*2+1] = m_colors[i];
         //m_vertex_data[i*2+1] = m_localCoordColors[i];
     }
 #ifdef USE_VBO  // Bind VBO data onto GPU
-    Painter::getSingleton()->bindVBOs(m_vertex_data,m_faces,m_vbo_vertices,m_vbo_indices);
+    Painter::getSingleton()->bindVBOs(m_vertex,m_faces,m_vbo_vertices,m_vbo_indices);
 #endif
 }
 
@@ -72,7 +74,7 @@ float Model::computeMeshResolution()
 {
     assert(!m_faces.empty());
     float meshResolution = 0;
-    for (Vec3i &tri : m_faces)
+    for (Vector3i &tri : m_faces)
     {
         meshResolution += (m_points[tri(0)]-m_points[tri(1)]).norm();
         meshResolution += (m_points[tri(1)]-m_points[tri(2)]).norm();
@@ -104,26 +106,26 @@ vector<bool> Model::computeEdgePoints()
     vector<bool> list(m_points.size(),false);
 
     // Extract all edges and vertex2face info
-    vector<Vector2i> edges;
+    vector<Vec2i> edges;
     vector< vector<int> > vert2face(m_points.size());
     for (uint i=0; i < m_faces.size(); ++i)
     {
-        Vec3i &tri = m_faces[i];
-        edges.push_back(Vector2i(tri(0),tri(1)));
-        edges.push_back(Vector2i(tri(1),tri(2)));
-        edges.push_back(Vector2i(tri(2),tri(0)));
+        Vector3i &tri = m_faces[i];
+        edges.push_back(Vec2i(tri(0),tri(1)));
+        edges.push_back(Vec2i(tri(1),tri(2)));
+        edges.push_back(Vec2i(tri(2),tri(0)));
         vert2face[tri(0)].push_back(i);
         vert2face[tri(1)].push_back(i);
         vert2face[tri(2)].push_back(i);
     }
 
-    for (Vector2i &e :edges)
+    for (Vec2i &e :edges)
     {
         // For each edge, count if it is connected to more than 1 face
         int counter=0;
         for (int i : vert2face[e(0)])
         {
-            Vec3i &tri = m_faces[i];
+            Vector3i &tri = m_faces[i];
             if(tri(0)==e(1) || tri(1)==e(1) || tri(2)==e(1))
                 counter++;
         }
@@ -154,7 +156,7 @@ void Model::computeVertexNormals()
         Vector3f normal(0,0,0);
         for (int v : vert2face[i])
         {
-            Vec3i &f = m_faces[v];
+            Vector3i &f = m_faces[v];
             normal += (m_points[f(1)] - m_points[f(0)]).cross(m_points[f(2)] - m_points[f(0)]);
         }
         assert(normal.allFinite());
@@ -184,7 +186,59 @@ void Model::computeBoundingBox()
     boundingBox.col(6) << bb_max(0),bb_max(1),bb_max(2);
     boundingBox.col(7) << bb_max(0),bb_min(1),bb_max(2);
 }
+/***************************************************************************/
 
+void Model::subsampleCloud(float voxel_size)
+{
+
+    assert(m_points.size() == m_normals.size() && m_points.size() == m_colors.size());
+
+    Vector3f extend = (bb_max-bb_min).cwiseAbs();
+    Vector3i res = Vector3i(1,1,1) + (extend/voxel_size).cast<int>();
+
+    vector<bool> occupancy(res(0)*res(1)*res(2),false);
+    vector<Vector3f> normals(res(0)*res(1)*res(2),Vector3f(0,0,0));
+
+    // Run points and normals through a voxel-grid filter and average
+    for(uint i=0; i < m_points.size(); ++i)
+    {
+        Vector3i vox = ((m_points[i]-bb_min)/voxel_size).cast<int>();
+        int index = vox(2)*res(1)*res(0) + vox(1)*res(0)+ vox(0);
+        occupancy[index] = true;
+        normals[index] += m_normals[i];
+    }
+
+    m_subpoints.clear();
+    m_subnormals.clear();
+    m_subcolors.clear();
+    for (int z=0; z < res(2); ++z)
+        for (int y=0; y < res(1); ++y)
+            for (int x=0; x < res(0); ++x)
+            {
+                int index = z*res(1)*res(0) + y*res(0)+ x;
+                if(occupancy[index])
+                {
+                    m_subpoints.push_back(Vector3f(x+0.5f,y+0.5f,z+0.5f)*voxel_size+bb_min);
+                    m_subnormals.push_back(normals[index].normalized());
+                    Vector3f col = m_colors[index]*255.f;
+                    m_subcolors.push_back(Vec3b(col(0),col(1),col(2)));
+                }
+            }
+
+#if 0
+    cv::viz::Viz3d show;
+    cv::Mat points(1,m_points.size(),CV_32FC3, m_points.data());
+    cv::Mat sub(1,m_subpoints.size(),CV_32FC3, m_subpoints.data());
+    cv::Mat nors(1,m_subnormals.size(),CV_32FC3, m_subnormals.data());
+    cv::Mat cols(1,m_subcolors.size(),CV_8UC3, m_subcolors.data());
+    //show.showWidget("original",viz::WCloud(points,cv::viz::Color::green()));
+    show.showWidget("sub",viz::WCloud(sub,cols));
+    show.showWidget("normals",viz::WCloudNormals(sub,nors,1,0.01));
+    show.spin();
+#endif
+
+
+}
 
 /***************************************************************************/
 
@@ -237,23 +291,17 @@ void Model::savePLY(string filename)
 
 /***************************************************************************/
 
-bool Model::loadFile(string file)
+bool Model::loadPLY(string filename)
 {
 
-    if (!boost::filesystem::exists(file))
+    if (!boost::filesystem::exists(filename))
     {
-        cerr << file << " does not exist" << endl;
+        cerr << filename << " does not exist" << endl;
         return false;
     }
 
-    string name = file.substr(0,file.size()-4);
-    cerr << name << endl;
-    int mode = file.substr(file.size()-3)=="ply" ? cv::viz::Mesh::LOAD_PLY : cv::viz::Mesh::LOAD_OBJ;
-    if (mode == cv::viz::Mesh::LOAD_OBJ)
-        m_texture = imread(name + ".png");
 
-
-    cv::viz::Mesh mesh = cv::viz::Mesh::load(file,mode);
+    cv::viz::Mesh mesh = cv::viz::Mesh::load(filename);
 
     m_points.resize(mesh.cloud.cols);
     for (int i=0; i < mesh.cloud.cols; ++i)
@@ -264,7 +312,7 @@ bool Model::loadFile(string file)
     {
         Vector4i &tri = mesh.polygons.at<Vector4i>(0,i);
         assert(tri(0)==3);    // Assert that all faces are triangles
-        m_faces.push_back(Vec3i(tri(1),tri(2),tri(3)));
+        m_faces.push_back(Vector3i(tri(1),tri(2),tri(3)));
     }
 
     m_colors.clear();
@@ -279,11 +327,6 @@ bool Model::loadFile(string file)
         m_colors.push_back(Vector3f(col[0],col[1],col[2]));
     }
 
-    m_tcoords.clear();
-    for (int i=0; i < mesh.tcoords.cols; ++i)
-        m_tcoords.push_back(mesh.tcoords.at<Vec2f>(0,i));
-    mesh.texture.copyTo(m_texture);
-
     assert(!m_points.empty());
 
     centroid.setZero();
@@ -293,6 +336,7 @@ bool Model::loadFile(string file)
     // Process colors
     for (Vector3f &c : m_colors) c /= 255.0f; // Normalized color for opengl
 
+    //for (Vector3f &p : m_points) p *= 0.001f;//savePLY(filename);return false;
 
     computeBoundingBox();
     computeVertexNormals();
@@ -304,4 +348,4 @@ bool Model::loadFile(string file)
 }
 
 
-/************************ END OF FILE **************************************/
+}

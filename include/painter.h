@@ -4,16 +4,30 @@
 #include <QtOpenGL>
 #include <QOpenGLFunctions>
 
+
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 
 #include <iostream>
 #include <opencv2/core.hpp>
 
+//#include <GL/glew.h>
+
+
+#ifdef __APPLE__
+#include <GLUT/glut.h>
+#else
+#include <GL/glut.h>
+#endif
+
+
 
 using namespace cv;
 using namespace Eigen;
 using namespace std;
+
+namespace Gopnik {
+
 
 
 class PaintObject
@@ -25,15 +39,14 @@ public:
 
 class SingletonPainter : public QGLWidget, protected QOpenGLFunctions
 {
+
 public:
 	
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-
     SingletonPainter(float near,float far,int width,int height);
     ~SingletonPainter();
 
-    int getHeight(){return m_fbo->size().height();}
-    int getWidth(){return m_fbo->size().width();}
+    int getHeight(){return m_height;}
+    int getWidth(){return m_width;}
     float getNear(){return m_near;}
     float getFar(){return m_far;}
 
@@ -43,8 +56,9 @@ public:
     void addPaintObject(PaintObject *object){m_objects.push_back(object);}
 	
     void paint(int x=0,int y=0,int w=0,int h=0);
+    void paint(Rect &rect);
 
-    void bindVBOs(vector<Vec3f> &vertex,vector<Vec3i> &faces, GLuint &vert, GLuint &ind);
+    void bindVBOs(vector<Vector3f> &vertex,vector<Vector3i> &faces, GLuint &vert, GLuint &ind);
     void drawVBOs(GLuint vert, GLuint ind, int count);
 
     inline void copyColorTo(Mat &dest){m_color(copy_rect).copyTo(dest);}
@@ -62,18 +76,26 @@ private:
     Rect render_rect, copy_rect;
     //OpenGL near/far.
     float m_near,m_far;
+    // OpenGL viewport dimensions
+    int m_height, m_width;
+
     //Background RGB color
     Vector3f m_background;
     //The rendered depth and color buffer is stored here.
     Mat m_depth,m_color;
     //Vector of objects that is painted (in this order).
     vector<PaintObject*> m_objects;
+
     //QT framebuffer object for offline rendering.
     QOpenGLFramebufferObject *m_fbo;
+
+    unsigned int fbo; // The frame buffer object
+    unsigned int fbo_depth; // The depth buffer for the frame buffer object
+    unsigned int fbo_color; // The texture object to write our frame buffer object to
 };
 
 
-class Painter : protected QOpenGLFunctions
+class Painter// : protected QOpenGLFunctions
 {
 
 public:
@@ -94,6 +116,7 @@ public:
     inline void addPaintObject(PaintObject *object){getSingleton()->addPaintObject(object);}
 	
     inline void paint(int x=0,int y=0,int w=0,int h=0){getSingleton()->paint(x,y,w,h);}
+    inline void paint(Rect &rect){getSingleton()->paint(rect);}
 
     inline void copyColorTo(Mat &dest){getSingleton()->copyColorTo(dest);}
     inline void copyDepthTo(Mat &dest){getSingleton()->copyDepthTo(dest);}
@@ -109,9 +132,11 @@ private:
 
 class RealWorldCamera : public PaintObject
 {
+
 public:
 
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
 
     virtual ~RealWorldCamera(){}
     RealWorldCamera(Matrix3f &kma,Isometry3f &transform);
@@ -139,16 +164,15 @@ public:
 
 class CoordinateSystem : public PaintObject
 {
-public:
 
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+public:
 
     CoordinateSystem(float size);
 
     void paint();
 
     float m_size;  // Size of the coordinate axis
-    Matrix<float,3,4> m_points;
+    vector<Vector3f> m_points;
     vector<GLushort> m_indices;
 
 };
@@ -156,8 +180,6 @@ public:
 class AxisAlignedPlane : public PaintObject
 {
 public:
-
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
     AxisAlignedPlane(int axis, float offset, float r,float g, float b);
 
@@ -172,9 +194,11 @@ public:
 
 class BoundingBox : public PaintObject
 {
+
 public:
 
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
 
     BoundingBox(Matrix<float,3,8> &in_bb);
     virtual ~BoundingBox(){}
@@ -187,3 +211,4 @@ public:
 };
 
 
+}
