@@ -728,9 +728,9 @@ void datasetManager::randomBGFill(Mat &patch)
     tl_x = center_x - patch_size.width/2;
     tl_y = center_y - patch_size.height/2;
 
-    tmp_rgb = backgrounds[bg].color(Rect(tl_x, tl_y, patch_size.width, patch_size.height));
-    tmp_dep = backgrounds[bg].depth(Rect(tl_x, tl_y, patch_size.width, patch_size.height));
-    tmp_nor = backgrounds[bg].normals(Rect(tl_x, tl_y, patch_size.width, patch_size.height));
+    backgrounds[bg].color(Rect(tl_x, tl_y, patch_size.width, patch_size.height)).copyTo(tmp_rgb);
+    backgrounds[bg].depth(Rect(tl_x, tl_y, patch_size.width, patch_size.height)).copyTo(tmp_dep);
+    backgrounds[bg].normals(Rect(tl_x, tl_y, patch_size.width, patch_size.height)).copyTo(tmp_nor);
 
     // Store the mask
     Mat mask = Mat::zeros(patch_size.width, patch_size.height, CV_8UC1);
