@@ -1,6 +1,4 @@
-
 #pragma once
-
 
 #include <Eigen/Core>
 #include <opencv2/core.hpp>
@@ -11,9 +9,7 @@ using namespace std;
 using namespace Eigen;
 
 
-namespace Gopnik {
-
-
+namespace sz { // For Wadim
 
 class Model : public PaintObject
 {

@@ -1,18 +1,31 @@
-
 #pragma once
 
 #include <chrono>
+#include <iostream>
+#include <fstream>
+#include <random>
+#include <set>
+#include <unordered_map>
+
 #include <Eigen/Core>
 #include <Eigen/Geometry>
+#include <Eigen/Eigenvalues>
 
 #include <opencv2/core.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/photo.hpp>
+#include <opencv2/highgui.hpp>
 
+#include <boost/filesystem.hpp>
 
+#include <H5Cpp.h>
+
+#include "datatypes.h"
 
 using namespace cv;
 using namespace Eigen;
 using namespace std;
-
 
 
 /*
@@ -121,34 +134,7 @@ void fuseDatasetIntoCloud(string dir_string)
 */
 
 
-namespace Gopnik
-{
-
-using Instance = pair<string,Isometry3f>;
-struct Frame
-{
-    int nr;
-    Mat color, depth, cloud, mask, hues, normals;
-    vector<Instance, Eigen::aligned_allocator<Instance>> gt;
-};
-
-struct Sample
-{
-    Mat data, label;
-    void copySample(Sample sample)
-    {
-        sample.data.copyTo(this->data);
-        this->label = sample.label;
-    }
-};
-
-struct Benchmark
-{
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-    vector<Frame> frames;
-    vector< pair<string,string> > models;
-    Matrix3f cam;
-};
+namespace sz { // For Wadim
 
 pair<Mat,Mat> loadPCLCloud(string filename);
 
@@ -234,6 +220,5 @@ int linemodRGB2Hue(Vec3b &in);
 Vector3f linemodRGB2HSV(Vec3b in);
 
 Vector3f rgb2hsv(Vector3f &rgb);
-
 
 }

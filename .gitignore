@@ -1,5 +1,6 @@
 build/
-hdf5/
+test/
+hdf5*
 *.solverstate
 *.caffemodel
 *.hd5

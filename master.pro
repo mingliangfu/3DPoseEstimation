@@ -4,7 +4,6 @@ CONFIG   += console
 CONFIG -= app_bundle
 
 
-
 LIBS +=  -L/usr/local/lib -L/opt/tum/external/lib -L/usr/lib/x86_64-linux-gnu/hdf5/serial/
 INCLUDEPATH += /usr/local/include /usr/include/eigen3 /usr/include/hdf5/serial/ $$PWD/include/ /opt/tum/external/include /usr/local/cuda-8.0/include/
 
@@ -47,7 +46,8 @@ HEADERS += include/sphere.h \
     include/datasetmanager.h \
     include/datatypes.h \
     include/networksolver.h \
-    include/hdf5handler.h
+    include/hdf5handler.h \
+    include/utilities.h
 
 
 

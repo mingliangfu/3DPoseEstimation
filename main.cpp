@@ -7,6 +7,7 @@
 #include <boost/property_tree/ini_parser.hpp>
 
 using namespace std;
+using namespace sz;
 
 int main(int argc, char *argv[])
 {
@@ -19,12 +20,12 @@ int main(int argc, char *argv[])
     }
     string config(argv[1]);
 
-    Gopnik::datasetManager db(config);
+    datasetManager db(config);
     db.createSceneSamplesAndTemplates();
     db.generateDatasets();
 
     // Initialize the solver
-    Gopnik::networkSolver solver(config, &db);
+    networkSolver solver(config, &db);
 
     // Train the network
     solver.trainNet(0);

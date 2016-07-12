@@ -1,8 +1,7 @@
 #include "../include/datasetmanager.h"
 
 
-namespace Gopnik
-{
+namespace sz {
 
 datasetManager::datasetManager(string config)
 {
@@ -27,7 +26,7 @@ datasetManager::datasetManager(string config)
 
 }
 
-Gopnik::Benchmark datasetManager::loadLinemodBenchmark(string linemod_path, string sequence, int count /*=-1*/)
+Benchmark datasetManager::loadLinemodBenchmark(string linemod_path, string sequence, int count /*=-1*/)
 {
     string dir_string = linemod_path + sequence;
     cerr << "  - loading benchmark " << dir_string << endl;
@@ -36,7 +35,7 @@ Gopnik::Benchmark datasetManager::loadLinemodBenchmark(string linemod_path, stri
     if (!(filesystem::exists(dir) && filesystem::is_directory(dir)))
     {
         cout << "Could not open data in " << dir_string << ". Aborting..." << endl;
-        return Gopnik::Benchmark();
+        return Benchmark();
     }
     int last=0;
     filesystem::directory_iterator end_iter;
@@ -51,10 +50,10 @@ Gopnik::Benchmark datasetManager::loadLinemodBenchmark(string linemod_path, stri
 
     if (count>-1) last = count;
 
-    Gopnik::Benchmark bench;
+    Benchmark bench;
     for (int i = 0; i <= last;i++)
     {
-        Gopnik::Frame frame;
+        Frame frame;
         frame.nr = i;
         frame.color = imread(dir_string + "/color" + to_string(i) + ".jpg");
         frame.depth = imread(dir_string + "/inp/depth" + to_string(i) + ".png",-1);
@@ -81,7 +80,7 @@ Gopnik::Benchmark datasetManager::loadLinemodBenchmark(string linemod_path, stri
     return bench;
 }
 
-Gopnik::Benchmark datasetManager::loadBigBirdBenchmark(string linemod_path, string sequence, int count /*=-1*/)
+Benchmark datasetManager::loadBigBirdBenchmark(string linemod_path, string sequence, int count /*=-1*/)
 {
     string dir_string = linemod_path + sequence;
     cerr << "  - loading benchmark " << dir_string << endl;
@@ -90,7 +89,7 @@ Gopnik::Benchmark datasetManager::loadBigBirdBenchmark(string linemod_path, stri
     if (!(filesystem::exists(dir) && filesystem::is_directory(dir)))
     {
         cout << "Could not open data in " << dir_string << ". Aborting..." << endl;
-        return Gopnik::Benchmark();
+        return Benchmark();
     }
     int last=0;
     filesystem::directory_iterator end_iter;
@@ -104,7 +103,7 @@ Gopnik::Benchmark datasetManager::loadBigBirdBenchmark(string linemod_path, stri
 
     if (count > -1) last = count;
 
-    Gopnik::Benchmark bench;
+    Benchmark bench;
 
     // Read intristic cameras
     bench.cam = h5.readBBIntristicMats(dir_string + "/calibration.h5");
@@ -115,7 +114,7 @@ Gopnik::Benchmark datasetManager::loadBigBirdBenchmark(string linemod_path, stri
     for (int np = 1; np <= 5; ++np) {
         for (int i = 0; i <= last; i += 3)
         {
-            Gopnik::Frame frame;
+            Frame frame;
             frame.nr = i * np;
             frame.color = imread(dir_string + "/NP" + to_string(np) + "_" + to_string(i)+".jpg");
             frame.color = frame.color(Rect(0, 32, 1280, 960));
@@ -182,7 +181,7 @@ vector<Background> datasetManager::loadBackgrounds(string backgrounds_path, int 
         // medianBlur(bg.depth, bg.depth, 5);
 
         // Add normals
-        Gopnik::depth2normals(bg.depth, bg.normals, 539, 539, 0, 0);
+        depth2normals(bg.depth, bg.normals, 539, 539, 0, 0);
 //        imshow("Normals: ", abs(bg.normals)); waitKey();
 //        imshow("Depth: ", bg.depth); waitKey();
 
@@ -244,10 +243,10 @@ Mat datasetManager::samplePatchWithScale(Mat &color, Mat &depth, Mat &normals, i
     return final;
 }
 
-vector<Gopnik::Sample> datasetManager::extractSceneSamplesPaul(vector<Gopnik::Frame> &frames, Matrix3f &cam, int index, Model &model)
+vector<Sample> datasetManager::extractSceneSamplesPaul(vector<Frame> &frames, Matrix3f &cam, int index, Model &model)
 {
-    vector<Gopnik::Sample> samples;
-    for (Gopnik::Frame &f : frames)
+    vector<Sample> samples;
+    for (Frame &f : frames)
     {
 //         Vector3f centroid = f.gt * model.centroid;
         Vector3f centroid = f.gt[0].second.translation();
@@ -255,9 +254,9 @@ vector<Gopnik::Sample> datasetManager::extractSceneSamplesPaul(vector<Gopnik::Fr
         projCentroid /= projCentroid(2);
 
         // Compute normals
-        Gopnik::depth2normals(f.depth,f.normals,cam);
+        depth2normals(f.depth,f.normals,cam);
 
-        Gopnik::Sample s;
+        Sample s;
         s.data = samplePatchWithScale(f.color,f.depth,f.normals,projCentroid(0),projCentroid(1),centroid(2),cam(0,0),cam(1,1));
 
         // Build 5-dimensional label: model index + quaternion + translation
@@ -309,10 +308,10 @@ vector<Gopnik::Sample> datasetManager::extractSceneSamplesPaul(vector<Gopnik::Fr
     return samples;
 }
 
-vector<Gopnik::Sample> datasetManager::extractSceneSamplesWadim(vector<Gopnik::Frame> &frames, Matrix3f &cam, int index)
+vector<Sample> datasetManager::extractSceneSamplesWadim(vector<Frame> &frames, Matrix3f &cam, int index)
 {
-    vector<Gopnik::Sample> samples;
-    for (Gopnik::Frame &f : frames)
+    vector<Sample> samples;
+    for (Frame &f : frames)
     {
         // Instead of taking object centroid, take the surface point as central sample point
         Vector3f projCentroid = cam * f.gt[0].second.translation();
@@ -322,9 +321,9 @@ vector<Gopnik::Sample> datasetManager::extractSceneSamplesWadim(vector<Gopnik::F
         assert(z>0.0f);
 
         // Compute normals
-        Gopnik::depth2normals(f.depth,f.normals,cam);
+        depth2normals(f.depth,f.normals,cam);
 
-        Gopnik::Sample s;
+        Sample s;
         s.data = samplePatchWithScale(f.color,f.depth,f.normals,projCentroid(0),projCentroid(1),z,cam(0,0),cam(1,1));
 
         // Build 5-dimensional label: model index + quaternion + translation
@@ -341,7 +340,7 @@ vector<Gopnik::Sample> datasetManager::extractSceneSamplesWadim(vector<Gopnik::F
     return samples;
 }
 
-vector<Gopnik::Sample> datasetManager::createTemplatesPaul(Model &model, Matrix3f &cam, int index)
+vector<Sample> datasetManager::createTemplatesPaul(Model &model, Matrix3f &cam, int index)
 {
     ifstream file(dataset_path + "paul/camPositionsElAz.txt");
     assert(file.good());
@@ -371,7 +370,7 @@ vector<Gopnik::Sample> datasetManager::createTemplatesPaul(Model &model, Matrix3
     Isometry3f pose = Isometry3f::Identity();
     pose.translation()(2) = 0.4f;
 
-    vector<Gopnik::Sample> samples;
+    vector<Sample> samples;
     for (Matrix3f &m : camPos)
     {
         // Instead of taking object centroid, take the surface point as central sample point
@@ -383,9 +382,9 @@ vector<Gopnik::Sample> datasetManager::createTemplatesPaul(Model &model, Matrix3
         renderer.renderView(model,pose,color,depth,false);
 
         // Compute normals
-        Gopnik::depth2normals(depth,normals,cam);
+        depth2normals(depth,normals,cam);
 
-        Gopnik::Sample sample;
+        Sample sample;
         sample.data = samplePatchWithScale(color,depth,normals,cam(0,2),cam(1,2),z,cam(0,0),cam(1,1));
 
         // Build 5-dimensional label: model index + quaternion + translation
@@ -402,7 +401,7 @@ vector<Gopnik::Sample> datasetManager::createTemplatesPaul(Model &model, Matrix3
     return samples;
 }
 
-vector<Gopnik::Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, int index, int subdiv)
+vector<Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, int index, int subdiv)
 {
     // Create synthetic views
     SphereRenderer sphere(cam);
@@ -416,7 +415,7 @@ vector<Gopnik::Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3
     vector<RenderView, Eigen::aligned_allocator<RenderView> > views =
             sphere.createViews(model,subdiv,scales,in_plane_rots,true,false);  // Equidistant sphere sampling with recursive level subdiv
 
-    vector<Gopnik::Sample> samples;
+    vector<Sample> samples;
     for (RenderView &v : views)
     {
         // Instead of taking object centroid, take the surface point as central sample point
@@ -424,9 +423,9 @@ vector<Gopnik::Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3
         //        assert(z>0.0f);
         float z = v.pose.translation()(2);
 
-        Gopnik::depth2normals(v.dep,normals,cam);
+        depth2normals(v.dep,normals,cam);
 
-        Gopnik::Sample sample;
+        Sample sample;
         sample.data = samplePatchWithScale(v.col,v.dep,normals,cam(0,2),cam(1,2),z,cam(0,0),cam(1,1));
 
         // Build 6-dimensional label: model index + quaternion + translation
@@ -460,12 +459,12 @@ void datasetManager::createSceneSamplesAndTemplates()
 
         // - load frames of benchmark and visualize
 //         Benchmark bench = loadBigBirdBenchmark(dataset_path, model_name);
-        Gopnik::Benchmark bench = loadLinemodBenchmark(dataset_path, model_name);
+        Benchmark bench = loadLinemodBenchmark(dataset_path, model_name);
         // showGT(bench,model);
 
         // Real data
         // - for each scene frame, extract RGBD sample
-        vector<Gopnik::Sample> realSamples = extractSceneSamplesPaul(bench.frames,bench.cam,model_index[model_name], model);
+        vector<Sample> realSamples = extractSceneSamplesPaul(bench.frames,bench.cam,model_index[model_name], model);
 
         // - store realSamples to HDF5 files
         h5.write(hdf5_path + "realSamples_" + model_name +".h5", realSamples);
@@ -475,8 +474,8 @@ void datasetManager::createSceneSamplesAndTemplates()
         clog << "  - render synthetic data:" << endl;
         // - create synthetic samples and templates
         int subdivTmpl = 2; // sphere subdivision factor for templates
-        vector<Gopnik::Sample> templates = createTemplatesWadim(model, bench.cam, model_index[model_name], subdivTmpl);
-        vector<Gopnik::Sample> synthSamples = createTemplatesWadim(model, bench.cam, model_index[model_name], subdivTmpl+1);
+        vector<Sample> templates = createTemplatesWadim(model, bench.cam, model_index[model_name], subdivTmpl);
+        vector<Sample> synthSamples = createTemplatesWadim(model, bench.cam, model_index[model_name], subdivTmpl+1);
 //         vector<Sample> temp = createTemplatesPaul(model, bench.cam, model_index[model_name]);
 //         vector<Sample> templates (temp.begin(),temp.begin() + 301);
 //         vector<Sample> synthSamples (temp.begin() + 302, temp.end());
@@ -502,10 +501,10 @@ void datasetManager::generateDatasets()
     for (string &seq : used_models)
     {
         // Read the data from hdf5 files
-        vector<Gopnik::Sample> train_real(h5.read(hdf5_path + "realSamples_" + seq + ".h5"));
-        vector<Gopnik::Sample> train_synth(h5.read(hdf5_path + "synthSamples_" + seq + ".h5"));
+        vector<Sample> train_real(h5.read(hdf5_path + "realSamples_" + seq + ".h5"));
+        vector<Sample> train_synth(h5.read(hdf5_path + "synthSamples_" + seq + ".h5"));
         templates.push_back(h5.read(hdf5_path + "templates_" + seq + ".h5"));
-        test_set.push_back(vector<Gopnik::Sample>());
+        test_set.push_back(vector<Sample>());
 
 //        if (random_background) {
 //            for (Sample &s : train_synth) randomShapeFill(s.data);

@@ -1,23 +1,4 @@
-
-
 #include "../include/utilities.h"
-
-#include <opencv2/imgcodecs.hpp>
-#include <opencv2/imgproc.hpp>
-#include <opencv2/photo.hpp>
-#include <opencv2/highgui.hpp>
-
-#include <Eigen/Eigenvalues>
-
-#include <boost/filesystem.hpp>
-
-#include <iostream>
-#include <fstream>
-#include <random>
-#include <set>
-#include <unordered_map>
-
-#include <H5Cpp.h>
 
 #define SQR(a) ((a)*(a))
 
@@ -293,8 +274,7 @@ void convertLinemodBenchmark(string dir_string)
 using namespace boost;
 using namespace std;
 
-namespace Gopnik
-{
+namespace sz {
 
 pair<Mat,Mat> loadPCLCloud(string filename)
 {
@@ -381,8 +361,6 @@ Benchmark loadKinectBenchmark(string folder)
 
 Benchmark loadJHUBenchmark(string folder)
 {
-
-
     Benchmark bench;
     filesystem::directory_iterator end_iter;
     for(filesystem::directory_iterator dir_iter(folder + "/mesh"); dir_iter != end_iter ; ++dir_iter)
@@ -1870,7 +1848,6 @@ void depth2normals(const Mat &dep, Mat &nor,float fx, float fy, float ox, float 
 
 void bilateralDepthFilter(Mat &src, Mat &dst){
 
-
     auto accum = [](float depth, ushort coef, float refDepth, float depthVariance, float& total, float& totalCoef){
         if (depth > 0){
             float bilateralCoef = std::exp(-SQR(refDepth - depth) / (2 * depthVariance));
@@ -1948,3 +1925,5 @@ Vector3f rgb2hsv(Vector3f &rgb)
 }
 
 }
+
+

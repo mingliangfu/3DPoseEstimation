@@ -1,5 +1,4 @@
-#ifndef DATATYPES_H
-#define DATATYPES_H
+#pragma once
 
 #include <Eigen/Geometry>
 
@@ -12,45 +11,49 @@
 #include <iostream>
 #include <iomanip>
 
-#include "utilities.h"
-
-
 using namespace Eigen;
 using namespace std;
 using namespace cv;
 
+namespace sz { // For Wadim
 
+using Instance = pair<string,Isometry3f>;
+struct Frame
+{
+    int nr;
+    Mat color, depth, cloud, mask, hues, normals;
+    vector<Instance, Eigen::aligned_allocator<Instance>> gt;
+};
+
+struct Sample
+{
+    Mat data, label;
+    void copySample(Sample sample)
+    {
+        sample.data.copyTo(this->data);
+        this->label = sample.label;
+    }
+};
+
+struct Benchmark
+{
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+    vector<Frame> frames;
+    vector< pair<string,string> > models;
+    Matrix3f cam;
+};
 
 struct Background
 {
     Mat color, depth, normals;
 };
 
-
-
-
 struct Triplet
 {
-    Gopnik::Sample anchor, puller, pusher;
+    Sample anchor, puller, pusher0, pusher1, pusher2;
 };
 
-struct TripletWang
-{
-    Gopnik::Sample anchor, puller, pusher0, pusher1, pusher2;
-};
-
-struct Pair
-{
-    Gopnik::Sample anchor, puller;
-};
-
-struct TripletsPairs
-{
-    vector<Triplet> triplets;
-    vector<Pair> pairs;
-};
-
-static inline void loadbar( string label, unsigned int x, unsigned int n, unsigned int w = 20)
+inline void loadbar( string label, unsigned int x, unsigned int n, unsigned int w = 20)
 {
     if ( (x != n) && (x % (n/100+1) != 0) ) return;
 
@@ -65,7 +68,7 @@ static inline void loadbar( string label, unsigned int x, unsigned int n, unsign
     if ( x == n ) clog << endl;
 }
 
-inline Mat showRGBDPatch(const Mat &patch, bool show=true)
+inline Mat showRGBDPatch(const Mat &patch, bool show/*=true*/)
 {
     vector<Mat> channels;
     cv::split(patch,channels);
@@ -103,5 +106,5 @@ inline std::vector<T> to_array(const std::string& s)
   return result;
 }
 
+}
 
-#endif // DATATYPES_H

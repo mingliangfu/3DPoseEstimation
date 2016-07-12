@@ -1,20 +1,16 @@
-
-
 #include "../include/hdf5handler.h"
 
 
-namespace Gopnik
-{
-
+namespace sz {
 
 hdf5Handler::hdf5Handler()
 {
 
 }
 
-vector<Gopnik::Sample> hdf5Handler::read(string filename)
+vector<Sample> hdf5Handler::read(string filename)
 {
-    vector<Gopnik::Sample> samples;
+    vector<Sample> samples;
     try
     {
         H5::H5File file(filename, H5F_ACC_RDONLY);
@@ -76,7 +72,7 @@ vector<Gopnik::Sample> hdf5Handler::read(string filename)
     return samples;
 }
 
-void hdf5Handler::write(string filename, vector<Gopnik::Sample> &samples)
+void hdf5Handler::write(string filename, vector<Sample> &samples)
 {
     if (samples.empty())
     {

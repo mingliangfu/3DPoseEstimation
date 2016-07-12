@@ -9,8 +9,7 @@ using namespace Eigen;
 #define CAM_NEAR 0.001f
 #define CAM_FAR 4.0f
 
-namespace Gopnik
-{
+namespace sz {
 
 /***************************************************************************/
 

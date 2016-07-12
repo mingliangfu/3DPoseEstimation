@@ -1,5 +1,3 @@
-
-
 #include <iostream>
 #include <string>
 #include <fstream>
@@ -16,8 +14,7 @@ using namespace std;
 
 #define USE_VBO
 
-namespace Gopnik
-{
+namespace sz {
 
 /***************************************************************************/
 

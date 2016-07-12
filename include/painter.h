@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <QtOpenGL>
@@ -26,9 +25,7 @@ using namespace cv;
 using namespace Eigen;
 using namespace std;
 
-namespace Gopnik {
-
-
+namespace sz { // For Wadim
 
 class PaintObject
 {
@@ -209,6 +206,5 @@ public:
     vector<GLushort> m_indices;
 
 };
-
 
 }

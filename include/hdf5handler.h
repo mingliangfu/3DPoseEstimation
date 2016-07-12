@@ -1,6 +1,4 @@
-
-#ifndef HDF5HANDLER_H
-#define HDF5HANDLER_H
+#pragma once
 
 #include <iostream>
 #include <H5Cpp.h>
@@ -9,15 +7,14 @@
 using namespace std;
 
 
-namespace Gopnik
-{
+namespace sz { // For Wadim
 
 class hdf5Handler
 {
 public:
     hdf5Handler();
-    vector<Gopnik::Sample> read(string filename);
-    void write(string filename, vector<Gopnik::Sample> &samples);
+    vector<Sample> read(string filename);
+    void write(string filename, vector<Sample> &samples);
     Isometry3f readBBPose(string filename);
     Matrix3f readBBIntristicMats(string filename);
     vector<Isometry3f,Eigen::aligned_allocator<Isometry3f>> readBBTrans(string filename);
@@ -26,4 +23,3 @@ public:
 
 }
 
-#endif // HDF5HANDLER_H

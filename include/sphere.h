@@ -1,6 +1,4 @@
-
 #pragma once
-
 
 #include <list>
 #include <vector>
@@ -16,8 +14,7 @@ using namespace std;
 using namespace cv;
 using namespace Eigen;
 
-namespace Gopnik
-{
+namespace sz { // For Wadim
 
 struct RenderView
 {

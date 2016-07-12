@@ -14,8 +14,7 @@
 using namespace std;
 
 
-namespace Gopnik
-{
+namespace sz {
 
 SphereRenderer::SphereRenderer(Matrix3f &cam){init(cam);}
 SphereRenderer::SphereRenderer(){m_camera.setZero();}
