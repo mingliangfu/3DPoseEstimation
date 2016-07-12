@@ -671,12 +671,11 @@ void datasetManager::randomShapeFill(Mat &patch)
     GaussianBlur(tmp_rgb, tmp_rgb, Size(5,5), 0, 0);
 
     // Store the mask
-    Mat mask = patch_dep > 0;
+    Mat mask = patch_dep == 0;
 
     // Copy random shapes to the background of the patch
     tmp_rgb.copyTo(patch_rgb,mask);
     tmp_dep.copyTo(patch_dep,mask);
-
 
     cv::merge(vector<Mat>{patch_rgb,patch_dep,patch_nor},patch);
 //    showRGBDPatch(patch, true);
@@ -722,12 +721,7 @@ void datasetManager::randomBGFill(Mat &patch)
     backgrounds[bg].normals(Rect(tl_x, tl_y, patch_size.width, patch_size.height)).copyTo(tmp_nor);
 
     // Store the mask
-    Mat mask = Mat::zeros(patch_size.width, patch_size.height, CV_8UC1);
-    for (int y = 0; y < patch_size.height; ++y) {
-        for (int x = 0; x < patch_size.width; ++x) {
-            if (patch_dep.at<float>(x,y) > 0) mask.at<uchar>(x,y) = 255;
-        }
-    }
+    Mat mask = patch_dep == 0;
 
     // Adjust depth
     float depth_scale = 0.45 / backgrounds[bg].depth.at<float>(center_x, center_y);
@@ -735,16 +729,10 @@ void datasetManager::randomBGFill(Mat &patch)
 
     // Fill backgrounds
     tmp_rgb.convertTo(tmp_rgb, CV_32FC3, 1/255.f);
-    for (int y = 0; y < patch_size.height; ++y) {
-        for (int x = 0; x < patch_size.width; ++x) {
-            for (int c = 0; c < patch_rgb.channels(); ++c) {
-                if (mask.at<uchar>(x,y) > 0) continue;
-                patch_rgb.at<Vec3f>(x,y)[c] = tmp_rgb.at<Vec3f>(x,y)[c]; // RGB
-                patch_dep.at<float>(x,y) = tmp_dep.at<float>(x,y); // Depth
-                patch_nor.at<Vec3f>(x,y)[c] = tmp_nor.at<Vec3f>(x,y)[c]; // Normals
-            }
-        }
-    }
+    tmp_rgb.copyTo(patch_rgb,mask);
+    tmp_dep.copyTo(patch_dep,mask);
+    tmp_nor.copyTo(patch_nor,mask);
+
     medianBlur(patch_rgb, patch_rgb, 3);
     medianBlur(patch_nor, patch_nor, 3);
 
