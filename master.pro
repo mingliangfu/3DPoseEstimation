@@ -3,27 +3,18 @@ QT += opengl
 CONFIG   += console
 CONFIG -= app_bundle
 
-<<<<<<< HEAD
-LIBS +=  -L/usr/local/lib
-INCLUDEPATH += /usr/local/include /usr/include/eigen3 /usr/include/hdf5/serial/
-=======
+
 
 LIBS +=  -L/usr/local/lib -L/opt/tum/external/lib -L/usr/lib/x86_64-linux-gnu/hdf5/serial/
-INCLUDEPATH += /usr/local/include /usr/include/eigen3 /usr/include/hdf5/serial/ $$PWD/include/ /opt/tum/external/include
->>>>>>> 26e3cc95c3c655b97760561ff73933d332d5692f
+INCLUDEPATH += /usr/local/include /usr/include/eigen3 /usr/include/hdf5/serial/ $$PWD/include/ /opt/tum/external/include /usr/local/cuda-8.0/include/
 
 QMAKE_CXXFLAGS += -std=c++11 -march=native -O3
 LIBPATH += /home/zsn/Documents/caffe/distribute/lib
-LIBS += -lopencv_core -lopencv_highgui -lopencv_imgproc -lopencv_imgcodecs -lopencv_viz -lhdf5_cpp -lhdf5 -lcaffe -lprotobuf -lglog -lopencv_features2d
+LIBS += -lopencv_core -lopencv_highgui -lopencv_imgproc -lopencv_imgcodecs -lopencv_viz -lhdf5_cpp -lhdf5 -lcaffe -lprotobuf -lglog -lopencv_features2d -lopencv_photo
 
 # Linux only
 unix:!macx {
-<<<<<<< HEAD
-    LIBS +=  -lboost_filesystem -lboost_system
-=======
     LIBS +=  -lboost_filesystem -lboost_system -lboost_program_options
-
->>>>>>> 26e3cc95c3c655b97760561ff73933d332d5692f
 }
 
 # Mac only
@@ -38,12 +29,22 @@ macx: {
 #QMAKE_CFLAGS += -fsanitize=address -fno-omit-frame-pointer
 #QMAKE_LFLAGS += -fsanitize=address
 
-SOURCES += main.cpp  src/sphere.cpp  src/painter.cpp  src/model.cpp  \
-    src/datasetgenerator.cpp \
+SOURCES += main.cpp \
+    src/sphere.cpp  \
+    src/painter.cpp \
+    src/model.cpp  \
+    src/datasetmanager.cpp \
     src/networksolver.cpp \
-    src/hdf5handler.cpp
+    src/hdf5handler.cpp \
+    src/utilities.cpp \
+    src/networkevaluator.cpp
 
-HEADERS += include/sphere.h include/painter.h include/model.h include/datasetgenerator.h \
+
+
+HEADERS += include/sphere.h \
+    include/painter.h \
+    include/model.h \
+    include/datasetmanager.h \
     include/datatypes.h \
     include/networksolver.h \
     include/hdf5handler.h
