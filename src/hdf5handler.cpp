@@ -142,7 +142,7 @@ void hdf5Handler::writeTensorFlow(string filename, vector<Sample> &samples)
     }
     try
     {
-        detectionTUM::Sample &s = samples[0];
+        Sample &s = samples[0];
         vector<hsize_t> d_dims = {samples.size(),(hsize_t)s.data.cols,(hsize_t)s.data.rows,(hsize_t)s.data.channels()};
         vector<hsize_t> l_dims = {samples.size(),(hsize_t)s.label.cols,(hsize_t)s.label.rows,(hsize_t)s.label.channels()};
 
@@ -204,7 +204,6 @@ vector<Sample> hdf5Handler::readTensorFlow(string filename)
         H5::DataSpace l_mem(l_slab_size.size(), l_slab_size.data());
 
         samples.resize(d_dims[0]);
-        if (count>0) samples.resize(count);
         for(uint i=0; i < samples.size(); ++i)
         {
             offset[0] = i;
