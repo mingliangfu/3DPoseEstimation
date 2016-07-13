@@ -31,7 +31,7 @@ struct Sample
     void copySample(Sample sample)
     {
         sample.data.copyTo(this->data);
-        this->label = sample.label;
+        sample.label.copyTo(this->label);
     }
 };
 
