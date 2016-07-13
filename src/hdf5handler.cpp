@@ -131,6 +131,102 @@ void hdf5Handler::write(string filename, vector<Sample> &samples)
     }
 }
 
+
+
+void hdf5Handler::writeTensorFlow(string filename, vector<Sample> &samples)
+{
+    if (samples.empty())
+    {
+        cerr << "writeHDF5: Nothing to write!" << endl;
+        return;
+    }
+    try
+    {
+        detectionTUM::Sample &s = samples[0];
+        vector<hsize_t> d_dims = {samples.size(),(hsize_t)s.data.cols,(hsize_t)s.data.rows,(hsize_t)s.data.channels()};
+        vector<hsize_t> l_dims = {samples.size(),(hsize_t)s.label.cols,(hsize_t)s.label.rows,(hsize_t)s.label.channels()};
+
+        // Specify size and shape of subset to write. Additionally needed memspace
+        vector<hsize_t> offset = {0, 0, 0, 0};
+        vector<hsize_t> d_slab_size = {1, d_dims[1], d_dims[2], d_dims[3]};
+        vector<hsize_t> l_slab_size = {1, l_dims[1], l_dims[2], l_dims[3]};
+
+        H5::DataSpace d_space(d_dims.size(),d_dims.data());
+        H5::DataSpace d_mem(d_slab_size.size(), d_slab_size.data());
+        H5::DataSpace l_space(l_dims.size(),l_dims.data());
+        H5::DataSpace l_mem(l_slab_size.size(), l_slab_size.data());
+
+        H5::H5File file(filename, H5F_ACC_TRUNC);
+        H5::DataSet d_set = file.createDataSet("data",H5::PredType::NATIVE_FLOAT,d_space);
+        H5::DataSet l_set = file.createDataSet("label",H5::PredType::NATIVE_FLOAT,l_space);
+        for(uint i=0; i < samples.size(); ++i)
+        {
+            offset[0] = i;
+            d_space.selectHyperslab(H5S_SELECT_SET, d_slab_size.data(),offset.data());
+            d_set.write(samples[i].data.data, H5::PredType::NATIVE_FLOAT, d_mem, d_space);
+            l_space.selectHyperslab(H5S_SELECT_SET, l_slab_size.data(),offset.data());
+            l_set.write(samples[i].label.data, H5::PredType::NATIVE_FLOAT, l_mem, l_space);
+        }
+    }
+    catch(H5::Exception error)
+    {
+        error.printError();
+        assert(0);
+    }
+}
+
+vector<Sample> hdf5Handler::readTensorFlow(string filename)
+{
+    vector<Sample> samples;
+    try
+    {
+        H5::H5File file(filename, H5F_ACC_RDONLY);
+
+        H5::DataSet d_set = file.openDataSet("data");
+        H5::DataSet l_set = file.openDataSet("label");
+
+        H5::DataSpace d_space = d_set.getSpace();
+        H5::DataSpace l_space = l_set.getSpace();
+
+        vector<hsize_t> d_dims(d_space.getSimpleExtentNdims());
+        vector<hsize_t> l_dims(l_space.getSimpleExtentNdims());
+        d_space.getSimpleExtentDims(d_dims.data(), nullptr);
+        l_space.getSimpleExtentDims(l_dims.data(), nullptr);
+
+        assert(d_dims[0] == l_dims[0]); // Make sure that data count = label count
+
+        // Specify size and shape of subset to read. Additionally needed memspace
+        vector<hsize_t> offset = {0, 0, 0, 0};
+        vector<hsize_t> d_slab_size = {1, d_dims[1], d_dims[2],d_dims[3]};
+        vector<hsize_t> l_slab_size = {1, l_dims[1], l_dims[2],l_dims[3]};
+
+        H5::DataSpace d_mem(d_slab_size.size(), d_slab_size.data());
+        H5::DataSpace l_mem(l_slab_size.size(), l_slab_size.data());
+
+        samples.resize(d_dims[0]);
+        if (count>0) samples.resize(count);
+        for(uint i=0; i < samples.size(); ++i)
+        {
+            offset[0] = i;
+            samples[i].data =  Mat(d_dims[1],d_dims[2],CV_32FC(d_dims[3]));
+            samples[i].label = Mat(l_dims[1],l_dims[2],CV_32FC(l_dims[3]));
+            d_space.selectHyperslab(H5S_SELECT_SET, d_slab_size.data(),offset.data());
+            d_set.read(samples[i].data.data, H5::PredType::NATIVE_FLOAT, d_mem, d_space);
+            l_space.selectHyperslab(H5S_SELECT_SET, l_slab_size.data(),offset.data());
+            l_set.read(samples[i].label.data, H5::PredType::NATIVE_FLOAT, l_mem, l_space);
+        }
+    }
+    catch(H5::Exception error)
+    {
+        error.printError();
+        assert(0);
+    }
+    return samples;
+}
+
+
+
+
 Isometry3f hdf5Handler::readBBPose(string filename)
 {
    Isometry3f poseMat;
