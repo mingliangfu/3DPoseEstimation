@@ -249,8 +249,8 @@ void networkSolver::trainNet(int resume_iter)
 
         if (random_background) {
             vector<vector<Sample>> copy_tmpl(templates.size(), vector<Sample>(templates[0].size()));
-            for (int object = 0; object < templates.size(); ++object) {
-                for (int pose = 0; pose < templates[0].size(); ++pose) {
+            for (size_t object = 0; object < templates.size(); ++object) {
+                for (size_t pose = 0; pose < templates[0].size(); ++pose) {
                     copy_tmpl[object][pose].copySample(templates[object][pose]);
                     db->randomBGFill(copy_tmpl[object][pose].data);
                 }
