@@ -263,6 +263,10 @@ void networkSolver::trainNet(int resume_iter)
 //        bootstrapping = computeKNN(testCNN);
     }
     clog << "Training finished!" << endl;
+
+    // Detach all threads
+    for(std::thread &t : threads)
+        t.detach();
 }
 
 
