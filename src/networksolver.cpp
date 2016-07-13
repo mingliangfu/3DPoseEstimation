@@ -55,12 +55,13 @@ vector<Sample> networkSolver::buildBatch(int batch_size, unsigned int triplet_si
 {
     vector<Sample> batch;
     size_t puller = 0, pusher0 = 0, pusher1 = 0, pusher2 = 0;
-    Triplet triplet;
 
     // Random generator for object selection and template selection
     std::uniform_int_distribution<size_t> ran_obj(0, nr_objects-1), ran_tpl(0, nr_template_poses-1);
 
     for (size_t linearId = iter * batch_size/triplet_size; linearId < (iter * batch_size/triplet_size) + batch_size/triplet_size; ++linearId) {
+
+        Triplet triplet;
 
         // Calculate 2d indices
         unsigned int training_pose = linearId / nr_objects;
@@ -141,12 +142,12 @@ vector<Sample> networkSolver::buildBatch(int batch_size, unsigned int triplet_si
         }
 
         // Fill random backgrounds
-        if (random_background) {
-            db->randomBGFill(triplet.anchor.data);
-            db->randomBGFill(triplet.puller.data);
-            db->randomBGFill(triplet.pusher0.data);
-            db->randomBGFill(triplet.pusher1.data);
-            db->randomBGFill(triplet.pusher2.data);
+        if (random_background != 0) {
+            db->randomFill(triplet.anchor.data, random_background);
+            db->randomFill(triplet.puller.data, random_background);
+            db->randomFill(triplet.pusher0.data, random_background);
+            db->randomFill(triplet.pusher1.data, random_background);
+            db->randomFill(triplet.pusher2.data, random_background);
         }
 
         // Store triplet to the batch
@@ -247,12 +248,12 @@ void networkSolver::trainNet(int resume_iter)
         int snapshot_iter = epoch_iter * num_epochs * (training_round + 1) + resume_iter;
         testCNN.CopyTrainedLayersFrom(net_name + "_iter_" + to_string(snapshot_iter) + ".caffemodel");
 
-        if (random_background) {
+        if (random_background != 0) {
             vector<vector<Sample>> copy_tmpl(templates.size(), vector<Sample>(templates[0].size()));
             for (size_t object = 0; object < templates.size(); ++object) {
                 for (size_t pose = 0; pose < templates[0].size(); ++pose) {
                     copy_tmpl[object][pose].copySample(templates[object][pose]);
-                    db->randomBGFill(copy_tmpl[object][pose].data);
+                    db->randomFill(copy_tmpl[object][pose].data, random_background);
                 }
             }
             eval::computeHistogram(testCNN, copy_tmpl, training_set, test_set, rotInv, config, snapshot_iter);
@@ -411,7 +412,7 @@ void networkSolver::readParam(string config)
     binarization_net_name = pt.get<string>("train.binarization_net_name");
     rotInv = to_array<int>(pt.get<string>("input.rotInv"));
     inplane = pt.get<bool>("input.inplane");
-    random_background = pt.get<bool>("input.random_background");
+    random_background = pt.get<int>("input.random_background");
 
     if (gpu) caffe::Caffe::set_mode(caffe::Caffe::GPU);
     used_models = to_array<string>(pt.get<string>("input.used_models"));

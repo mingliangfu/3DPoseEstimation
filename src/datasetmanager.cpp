@@ -11,7 +11,7 @@ datasetManager::datasetManager(string config)
     hdf5_path = pt.get<string>("paths.hdf5_path");
     bg_path = pt.get<string>("paths.background_path");
 
-    random_background = pt.get<bool>("input.random_background");
+    random_background = pt.get<int>("input.random_background");
     use_real = pt.get<bool>("input.use_real");
     inplane = pt.get<bool>("input.inplane");
     models = to_array<string>(pt.get<string>("input.models"));
@@ -495,7 +495,7 @@ void datasetManager::generateDatasets()
     test_set.clear();
     templates.clear();
 
-    if (random_background)
+    if (random_background == 3)
         backgrounds = loadBackgrounds(bg_path);
 
     for (string &seq : used_models)
@@ -622,6 +622,15 @@ void datasetManager::computeQuaternions()
     }
 }
 
+void datasetManager::randomFill(Mat &patch, int type)
+{
+    switch(type) {
+        case 1: randomColorFill(patch); break;
+        case 2: randomShapeFill(patch); break;
+        case 3: randomRealFill(patch); break;
+    }
+}
+
 void datasetManager::randomColorFill(Mat &patch)
 {
     int chans = patch.channels();
@@ -682,7 +691,7 @@ void datasetManager::randomShapeFill(Mat &patch)
 
 }
 
-void datasetManager::randomBGFill(Mat &patch)
+void datasetManager::randomRealFill(Mat &patch)
 {
     Size patch_size(patch.size().width,patch.size().height);
     Size bg_size(backgrounds[0].color.size().width, backgrounds[0].color.size().height);

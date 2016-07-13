@@ -75,7 +75,8 @@ public:
     unsigned int step_size;
     string config, network_path, net_name, learning_policy, binarization_net_name;
     float learning_rate, momentum, weight_decay, gamma;
-    bool gpu, binarization, inplane, random_background;
+    bool gpu, binarization, inplane;
+    int random_background;
 };
 
 }

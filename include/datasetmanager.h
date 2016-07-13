@@ -46,9 +46,10 @@ public:
     void generateDatasets();
     void computeQuaternions();
     void fillVertexTmpl();
+    void randomFill(Mat &patch, int type);
     void randomColorFill(Mat &patch);
     void randomShapeFill(Mat &patch);
-    void randomBGFill(Mat &patch);
+    void randomRealFill(Mat &patch);
 
     // Helper methods
     const vector<vector<Sample>>& getTrainingSet() const {return training_set;}
@@ -77,9 +78,10 @@ private:
     vector<string> models, used_models;
     unordered_map<string,int> model_index, global_model_index;
     vector<int> rotInv;
-    bool random_background, inplane, use_real;
+    bool inplane, use_real;
     hdf5Handler h5;
     vector<Background> backgrounds;
+    int random_background;
 
 };
 
