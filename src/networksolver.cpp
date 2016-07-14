@@ -244,9 +244,8 @@ void networkSolver::trainNet(int resume_iter)
         }
 
         // Do bootstraping
-        solver.Snapshot();
         int snapshot_iter = epoch_iter * num_epochs * (training_round + 1) + resume_iter;
-        testCNN.CopyTrainedLayersFrom(net_name + "_iter_" + to_string(snapshot_iter) + ".caffemodel");
+        testCNN.ShareTrainedLayersWith(&(*net));
 
         if (random_background != 0) {
             vector<vector<Sample>> copy_tmpl(templates.size(), vector<Sample>(templates[0].size()));
