@@ -277,8 +277,8 @@ void networkEvaluator::computeHistogram(caffe::Net<float> &CNN,
 
      // -- read learning parameters
      bool use_real = pt.get<bool>("input.use_real");
-     bool random_background = pt.get<bool>("input.random_background");
-     string rb = random_background ? "_rb" : "";
+     int random_background = pt.get<int>("input.random_background");
+     string rb = random_background != 0 ? "_rb" + to_string(random_background) : "";
      string train_data = use_real ? "_real+synth" : "_synth";
      string net_name = pt.get<string>("train.net_name");
      vector<string> used_models = to_array<string>(pt.get<string>("input.used_models"));
