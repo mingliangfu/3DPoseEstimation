@@ -11,7 +11,7 @@ This project was created as a part of the "Real-Time 3D Object Classification an
   * [CUDA 7.5 hack - gcc 5](https://gist.github.com/wangruohui/679b05fcd1466bb0937f)
 * Eigen3: *sudo apt install libeigen3-dev*
 * VTK6: *sudo apt install libvtk6-dev*
-* [OpenCV 3.1](opencv.org/downloads.html)
+* [OpenCV 3.1](http://opencv.org/downloads.html)
 * HDF5: *sudo apt install libhdf5-serial-dev*
   * HDF5 fix:
 	*find . -type f -exec sed -i -e 's^"hdf5.h"^"hdf5/serial/hdf5.h"^g' -e 's^"hdf5_hl.h"^"hdf5/serial/hdf5_hl.h"^g' '{}' \;*
@@ -19,9 +19,11 @@ This project was created as a part of the "Real-Time 3D Object Classification an
 	*sudo ln -s libhdf5_serial.so.10.1.0 libhdf5.so*
 	*sudo ln -s libhdf5_serial_hl.so.10.0.2 libhdf5_hl.so*
 * Caffe: Download [the latest release](https://github.com/BVLC/caffe) and add [the triplet layer](https://github.com/BVLC/caffe/pull/2603)
+  * Before installation take care of prerequisites (Boost, BLAS, etc) as mentioned [here](http://caffe.berkeleyvision.org/installation.html).
 * OpenGL Utility Toolkit: *sudo apt-get install freeglut3-dev*
 
 
-##Used databases:
+##Used datasets:
 * [LineMOD](https://cvarlab.icg.tugraz.at/projects/3d_object_detection/)
 * [BigBIRD](http://rll.berkeley.edu/bigbird/)
+* [Washington](http://rgbd-dataset.cs.washington.edu/dataset/)
