@@ -16,6 +16,8 @@ using namespace Eigen;
 using namespace std;
 using namespace cv;
 
+namespace sz {
+
 // Show progress bar
 inline void loadbar(string label, unsigned int x, unsigned int n, unsigned int w = 20)
 {
@@ -56,3 +58,4 @@ void depth2normals(const Mat &depth, Mat &normals, float fx, float fy, float ox,
 inline void depth2normals(const Mat &depth, Mat &normals, Matrix3f &cam)
 {depth2normals(depth,normals,cam(0,0),cam(1,1),cam(0,2),cam(1,2));}
 
+}

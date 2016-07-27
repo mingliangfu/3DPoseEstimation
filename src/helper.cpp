@@ -1,5 +1,7 @@
 #include "helper.h"
 
+namespace sz {
+
 Mat showRGBDPatch(const Mat &patch, bool show /*= true*/)
 {
     vector<Mat> channels;
@@ -79,4 +81,6 @@ void depth2normals(const Mat &dep, Mat &nor,float fx, float fy, float ox, float 
             ++depth_ptr;
         }
     }
+}
+
 }
