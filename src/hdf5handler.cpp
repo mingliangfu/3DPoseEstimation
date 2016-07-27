@@ -264,6 +264,7 @@ Isometry3f hdf5Handler::readBBPose(string filename)
 
 Mat hdf5Handler::readBBDepth(string filename)
 {
+    Mat depthImage;
     try
     {
         H5::H5File file(filename, H5F_ACC_RDONLY);
@@ -278,7 +279,7 @@ Mat hdf5Handler::readBBDepth(string filename)
 
         float newbuffer[depth_dims[0]][depth_dims[1]]; //static array.
         depth.read(newbuffer, H5::PredType::NATIVE_FLOAT, memspace, depth_space);
-        Mat depthImage = Mat(depth_dims[0],depth_dims[1], CV_32F);
+        depthImage = Mat(depth_dims[0],depth_dims[1], CV_32F);
 
         for (size_t x = 0; x < depth_dims[0]; ++x) {
             for (size_t y = 0; y < depth_dims[1]; ++y) {
@@ -287,14 +288,13 @@ Mat hdf5Handler::readBBDepth(string filename)
         }
         // Convert to meters
         depthImage.convertTo(depthImage,CV_32F,0.0001f);
-
-        return depthImage;
     }
     catch(H5::Exception error)
     {
         error.printError();
         assert(0);
     }
+    return depthImage;
 }
 
 Matrix3f hdf5Handler::readBBIntristicMats(string filename)

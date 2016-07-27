@@ -429,9 +429,9 @@ void datasetManager::generateAndStoreSamples(int sampling_type)
         // - for each scene frame, extract RGBD sample
         vector<Sample> real_samples = extractRealSamplesPaul(bench.frames, bench.cam, model_index[model_name], model);
 
-        // - store real samples to HDF5 files
-        h5.write(hdf5_path + "realSamples_" + model_name +".h5", real_samples);
-        // for (Sample &s : real_samples) showRGBDPatch(s.data);
+        // - store realSamples to HDF5 files
+        h5.write(hdf5_path + "realSamples_" + model_name +".h5", realSamples);
+        //for (Sample &s : realSamples) showRGBDPatch(s.data,true);
 
         // Synthetic data
         clog << "  - render synthetic data:" << endl;
@@ -448,9 +448,10 @@ void datasetManager::generateAndStoreSamples(int sampling_type)
 
         // - store synthetic samples to HDF5 files
         h5.write(hdf5_path + "templates_" + model_name + ".h5", templates);
-        h5.write(hdf5_path + "synthSamples_" + model_name + ".h5", synth_samples);
-//         for (Sample &s : templates) showRGBDPatch(s.data);
-        // for (Sample &s : synth_samples) showRGBDPatch(s.data);
+        h5.write(hdf5_path + "synthSamples_" + model_name + ".h5", synthSamples);
+        for (Sample &s : templates) showRGBDPatch(s.data,true);
+//        for (Sample &s : synthSamples) showRGBDPatch(s.data,true);
+
     }
 }
 
