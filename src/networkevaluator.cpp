@@ -37,7 +37,7 @@ Mat networkEvaluator::computeDescriptors(caffe::Net<float> &CNN, vector<Sample> 
                     const float* ptr = patch.ptr<float>(h);
                     for (int w = 0; w < targetSize; ++w)
                         for (int c = 0; c < channels; ++c)
-                            data[i*img_size + (c * targetSize + h) * targetSize + w] = *(ptr++);
+                            data[j*img_size + (c * targetSize + h) * targetSize + w] = *(ptr++);
                 }
             }
             // Copy data memory into Caffe input layer, process batch and copy result back

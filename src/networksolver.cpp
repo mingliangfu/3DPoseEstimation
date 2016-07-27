@@ -201,6 +201,7 @@ void networkSolver::trainNet(int resume_iter, bool threaded)
     const int channels =  input_data_layer->channels();
     const int target_size = input_data_layer->height();
     const int slice = input_data_layer->height()*input_data_layer->width();
+    const int img_size = slice * channels;
 
     unsigned int triplet_size = 5;
     unsigned int epoch_iter = nr_objects * nr_training_poses / (batch_size/triplet_size);
@@ -244,11 +245,12 @@ void networkSolver::trainNet(int resume_iter, bool threaded)
                     // Fill linear batch memory with input data in Caffe layout with channel-first and set as network input
                     for (size_t i=0; i < batch.size(); ++i)
                     {
-                        int currImg = i * slice*channels;
-                        for (int ch = 0; ch < channels ; ++ch)
-                            for (int y = 0; y < target_size; ++y)
-                                for (int x = 0; x < target_size; ++x)
-                                    batch_caffe[currImg + slice*ch + y*target_size + x] = batch[i].data.ptr<float>(y)[x*channels + ch];
+                        for (int h = 0; h < target_size; ++h) {
+                            const float* ptr = batch[i].data.ptr<float>(h);
+                            for (int w = 0; w < target_size; ++w)
+                                for (int c = 0; c < channels; ++c)
+                                    batch_caffe[i*img_size + (c * target_size + h) * target_size + w] = *(ptr++);
+                        }
                     }
                 }
 
