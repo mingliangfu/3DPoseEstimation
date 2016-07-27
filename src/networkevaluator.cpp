@@ -95,7 +95,7 @@ void networkEvaluator::visualizeKNN(caffe::Net<float> &CNN,
     Mat DBfeats, DBtest;
     std::random_device ran;
 
-    for (int obj = 0; obj < test_set.size(); ++obj) {
+    for (size_t obj = 0; obj < test_set.size(); ++obj) {
         DBtest.push_back(computeDescriptors(CNN, test_set[obj]));
         DBfeats.push_back(computeDescriptors(CNN, templates[obj]));
     }

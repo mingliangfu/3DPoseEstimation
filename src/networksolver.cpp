@@ -1,11 +1,10 @@
 #include "../include/networksolver.h"
+//#define THREADED
 
 namespace sz {
 
-networkSolver::networkSolver(string config, datasetManager* db): db(db), templates(db->getTemplateSet()), training_set(db->getTrainingSet()),
-                                                                 test_set(db->getTestSet()), tmpl_quats(db->getTmplQuats()),
-                                                                 training_quats(db->getTrainingQuats()), test_quats(db->getTestQuats()),
-                                                                 config(config)
+networkSolver::networkSolver(string config, datasetManager* db): db(db), template_set(db->getTemplateSet()), training_set(db->getTrainingSet()),
+                                                                 test_set(db->getTestSet()), maxSimTmpl(db->getMaxSimTmpl()), config(config)
 {
     // Read config parameters
     readParam(config);
@@ -71,11 +70,11 @@ vector<Sample> networkSolver::buildBatch(int batch_size, unsigned int triplet_si
         triplet.anchor.copySample(training_set[object][training_pose]);
         // Puller: most similar template
         puller = maxSimTmpl[object][training_pose][0];
-        triplet.puller.copySample(templates[object][puller]);
+        triplet.puller.copySample(template_set[object][puller]);
 
         // Pusher 0: second most similar template
         pusher0 = maxSimTmpl[object][training_pose][1];
-        triplet.pusher0.copySample(templates[object][pusher0]);
+        triplet.pusher0.copySample(template_set[object][pusher0]);
 
         if (bootstrapping)
         {
@@ -85,23 +84,23 @@ vector<Sample> networkSolver::buildBatch(int batch_size, unsigned int triplet_si
 
             if (knn_object != object || knn_pose != puller) {
                 // - missclassified nearest neighbor
-                triplet.pusher1.copySample(templates[knn_object][knn_pose]);
+                triplet.pusher1.copySample(template_set[knn_object][knn_pose]);
             } else {
                 // - random template of the same class
                 // -- if model is rotInv or symmetric
-                if (rotInv[global_model_index[used_models[object]]] != 0)
+                if (rotInv[model_index[used_models[object]]] != 0)
                 {
                     // -- randomize until elevation levels of the puller and pusher 1 are different
                     pusher1 = ran_tpl(ran);
-                    while(acos(tmpl_quats[object][pusher1].toRotationMatrix()(2,2)) - acos(tmpl_quats[object][puller].toRotationMatrix()(2,2)) < 0.2)
+                    while(abs(acos(template_set[object][pusher1].getQuat().toRotationMatrix()(2,2)) - acos(template_set[object][puller].getQuat().toRotationMatrix()(2,2))) < 0.2)
                         pusher1 = ran_tpl(ran);
-                    triplet.pusher1.copySample(templates[object][pusher1]);
+                    triplet.pusher1.copySample(template_set[object][pusher1]);
 
                 // -- if model is normal
                 } else {
                     pusher1 = ran_tpl(ran);
                     while(pusher1 == puller && pusher1 == pusher0) pusher1 = ran_tpl(ran);
-                    triplet.pusher1.copySample(templates[object][pusher1]);
+                    triplet.pusher1.copySample(template_set[object][pusher1]);
                 }
             }
 
@@ -110,35 +109,35 @@ vector<Sample> networkSolver::buildBatch(int batch_size, unsigned int triplet_si
                 // - missclassified knn of a different object
                 knn_object = maxSimKNNTmpl[object][training_pose][2];
                 knn_pose = maxSimKNNTmpl[object][training_pose][3];
-                triplet.pusher2.copySample(templates[knn_object][knn_pose]);
+                triplet.pusher2.copySample(template_set[knn_object][knn_pose]);
             } else {
                 // - template from another object
                 pusher2 = ran_obj(ran);  
                 while (pusher2 == object) pusher2 = ran_obj(ran);
-                triplet.pusher2.copySample(templates[pusher2][ran_tpl(ran)]);
+                triplet.pusher2.copySample(template_set[pusher2][ran_tpl(ran)]);
             }
         } else {
             // Pusher 1: random template of the same class
             // - if model is rotInv or symmetric
-            if (rotInv[global_model_index[used_models[object]]] != 0)
+            if (rotInv[model_index[used_models[object]]] != 0)
             {
                 // -- randomize until elevation levels of the puller and pusher 1 are different
                 pusher1 = ran_tpl(ran);
-                while(acos(tmpl_quats[object][pusher1].toRotationMatrix()(2,2)) - acos(tmpl_quats[object][puller].toRotationMatrix()(2,2)) < 0.2)
+                while(abs(acos(template_set[object][pusher1].getQuat().toRotationMatrix()(2,2)) - acos(template_set[object][puller].getQuat().toRotationMatrix()(2,2))) < 0.2)
                     pusher1 = ran_tpl(ran);
-                triplet.pusher1.copySample(templates[object][pusher1]);
+                triplet.pusher1.copySample(template_set[object][pusher1]);
 
             // - if model is normal
             } else {
                 pusher1 = ran_tpl(ran);
                 while(pusher1 == puller && pusher1 == pusher0) pusher1 = ran_tpl(ran);
-                triplet.pusher1.copySample(templates[object][pusher1]);
+                triplet.pusher1.copySample(template_set[object][pusher1]);
             }
 
             // Pusher 2: random template of a different class
             pusher2 = ran_obj(ran);
             while (pusher2 == object) pusher2 = ran_obj(ran);
-            triplet.pusher2.copySample(templates[pusher2][ran_tpl(ran)]);
+            triplet.pusher2.copySample(template_set[pusher2][ran_tpl(ran)]);
         }
 
         // Fill random backgrounds
@@ -158,11 +157,11 @@ vector<Sample> networkSolver::buildBatch(int batch_size, unsigned int triplet_si
         batch.push_back(triplet.pusher2);
 
 #if 0   // Show triplets
-        imshow("anchor",showRGBDPatch(triplet.anchor.data,false));
-        imshow("puller",showRGBDPatch(triplet.puller.data,false));
-        imshow("pusher0",showRGBDPatch(triplet.pusher0.data,false));
-        imshow("pusher1",showRGBDPatch(triplet.pusher1.data,false));
-        imshow("pusher2",showRGBDPatch(triplet.pusher2.data,false));
+        imshow("anchor",showRGBDPatch(batch[batch.size()-5].data,false));
+        imshow("puller",showRGBDPatch(batch[batch.size()-4].data,false));
+        imshow("pusher0",showRGBDPatch(batch[batch.size()-3].data,false));
+        imshow("pusher1",showRGBDPatch(batch[batch.size()-2].data,false));
+        imshow("pusher2",showRGBDPatch(batch.back().data,false));
         waitKey();
 #endif
 
@@ -204,24 +203,26 @@ void networkSolver::trainNet(int resume_iter)
     const int target_size = input_data_layer->height();
     const int slice = input_data_layer->height()*input_data_layer->width();
 
-    vector<float> batch_caffe;
     unsigned int triplet_size = 5;
     unsigned int epoch_iter = nr_objects * nr_training_poses / (batch_size/triplet_size);
 
-    // Compute MaxSimTmpls to build batches
-    if (inplane) { computeMaxSimTmplInplane(); }
-            else { computeMaxSimTmpl(); }
 
+#ifdef THREADED
+    vector<float> batch_caffe;
     // Start threads
     // - number of threads supported
     size_t nr_threads = std::thread::hardware_concurrency();
-    // - start threaded batch builders
     queue<vector<float>> batch_queue;
     vector<std::thread> threads(nr_threads/2);
+    // - start threaded batch builders
     thread_iter = 0;
     for(std::thread &t : threads)
         t = std::thread(&networkSolver::buildBatchQueue, this, batch_size, triplet_size, epoch_iter,
                         slice, channels, target_size, std::ref(batch_queue));
+#else
+    vector<float> batch_caffe(batch_size * slice*channels,0);
+    vector<Sample> batch;
+#endif
 
     // Perform training
     for (size_t training_round = 0; training_round < num_training_rounds; ++training_round)
@@ -230,6 +231,7 @@ void networkSolver::trainNet(int resume_iter)
         {
             for (size_t iter = 0; iter < epoch_iter; iter++)
             {
+#ifdef THREADED
                 // Get a batch from the queue
                 std::unique_lock<std::mutex> lock(queue_mutex);
                 cond.wait(lock, [&](){return !batch_queue.empty();}); // wait until the queue is not empty
@@ -237,6 +239,19 @@ void networkSolver::trainNet(int resume_iter)
                 batch_queue.pop();
                 cond.notify_all();
                 lock.unlock();
+#else
+                batch = buildBatch(batch_size, triplet_size, iter, bootstrapping);
+
+                // Fill linear batch memory with input data in Caffe layout with channel-first and set as network input
+                for (size_t i=0; i < batch.size(); ++i)
+                {
+                    int currImg = i * slice*channels;
+                    for (int ch = 0; ch < channels ; ++ch)
+                        for (int y = 0; y < target_size; ++y)
+                            for (int x = 0; x < target_size; ++x)
+                                batch_caffe[currImg + slice*ch + y*target_size + x] = batch[i].data.ptr<float>(y)[x*channels + ch];
+                }
+#endif
 
                 input_data_layer->set_cpu_data(batch_caffe.data());
                 solver.Step(1);
@@ -248,25 +263,28 @@ void networkSolver::trainNet(int resume_iter)
         testCNN.ShareTrainedLayersWith(&(*net));
 
         if (random_background != 0) {
-            vector<vector<Sample>> copy_tmpl(templates.size(), vector<Sample>(templates[0].size()));
-            for (size_t object = 0; object < templates.size(); ++object) {
-                for (size_t pose = 0; pose < templates[0].size(); ++pose) {
-                    copy_tmpl[object][pose].copySample(templates[object][pose]);
+            vector<vector<Sample>> copy_tmpl(nr_objects, vector<Sample>(nr_template_poses));
+            for (size_t object = 0; object < nr_objects; ++object) {
+                for (size_t pose = 0; pose < nr_template_poses; ++pose) {
+                    copy_tmpl[object][pose].copySample(template_set[object][pose]);
                     db->randomFill(copy_tmpl[object][pose].data, random_background);
                 }
             }
             eval::computeHistogram(testCNN, copy_tmpl, training_set, test_set, rotInv, config, snapshot_iter);
-            eval::computeHistogram(testCNN, templates, training_set, test_set, rotInv, config, snapshot_iter);
+            eval::computeHistogram(testCNN, template_set, training_set, test_set, rotInv, config, snapshot_iter);
         } else {
-            eval::computeHistogram(testCNN, templates, training_set, test_set, rotInv, config, snapshot_iter);
+            eval::computeHistogram(testCNN, template_set, training_set, test_set, rotInv, config, snapshot_iter);
         }
-//        bootstrapping = computeKNN(testCNN);
+    // bootstrapping = computeKNN(testCNN);
     }
+    solver.Snapshot();
     clog << "Training finished!" << endl;
 
+#ifdef THREADED
     // Detach all threads
     for(std::thread &t : threads)
         t.detach();
+#endif
 }
 
 
@@ -305,9 +323,6 @@ void networkSolver::binarizeNet(int resume_iter)
     unsigned int triplet_size = 5;
     unsigned int epoch_iter = nr_objects * nr_training_poses / (batch_size/triplet_size);
 
-    // Compute MaxSimTmpls to build batches
-    computeMaxSimTmpl();
-
     // Perform training
     for (size_t epoch = 0; epoch < binarization_epochs; epoch++)
     {
@@ -339,10 +354,9 @@ bool networkSolver::computeKNN(caffe::Net<float> &CNN)
 {
     // Get the training data
     Mat DBfeats, DBtraining;
-    for (string &seq : used_models)
-    {
-        DBtraining.push_back(eval::computeDescriptors(CNN, training_set[model_index[seq]]));
-        DBfeats.push_back(eval::computeDescriptors(CNN, templates[model_index[seq]]));
+    for (size_t model_id = 0; model_id < used_models.size(); ++model_id) {
+        DBtraining.push_back(eval::computeDescriptors(CNN, training_set[model_id]));
+        DBfeats.push_back(eval::computeDescriptors(CNN, template_set[model_id]));
     }
 
     // Create a k-NN matcher
@@ -364,8 +378,8 @@ bool networkSolver::computeKNN(caffe::Net<float> &CNN)
 
         for (int nn = 0; nn < knn; nn++)
         {
-            int tmpl_object =  matches[linearId][nn].trainIdx / templates[0].size();
-            int tmpl_pose =  matches[linearId][nn].trainIdx % templates[0].size();
+            int tmpl_object =  matches[linearId][nn].trainIdx / nr_template_poses;
+            int tmpl_pose =  matches[linearId][nn].trainIdx % nr_template_poses;
 #if 0
             imshow("query",showRGBDPatch(training_set[query_object][query_pose].data,false));
             imshow("simKNN",showRGBDPatch(templates[tmpl_object][tmpl_pose].data,false));
@@ -385,6 +399,7 @@ bool networkSolver::computeKNN(caffe::Net<float> &CNN)
             }
         }
     }
+    return true;
 }
 
 void networkSolver::readParam(string config)
@@ -419,117 +434,12 @@ void networkSolver::readParam(string config)
 
     // Save dataset parameters
     nr_objects = used_models.size();
-    nr_training_poses = db->getTrainingSetSize();
-    nr_template_poses = db->getTemplateSetSize();
-    nr_test_poses = db->getTestSetSize();
+    nr_training_poses = training_set.front().size();
+    nr_template_poses = template_set.front().size();
+    nr_test_poses = test_set.front().size();
 
     // For each object build a mapping from model name to index number
-    for (size_t i = 0; i < nr_objects; ++i) model_index[used_models[i]] = i;
-    // Global mapping
-    for (size_t i = 0; i < models.size(); ++i) global_model_index[models[i]] = i;
+    for (size_t i = 0; i < models.size(); ++i) model_index[models[i]] = i;
 
-}
-
-void networkSolver::computeMaxSimTmplInplane()
-{
-    // Calculate maxSimTmpl: find the 2 most similar templates for each object in the training set
-    maxSimTmpl.assign(nr_objects, vector<vector<int>>(nr_training_poses, vector<int>()));
-    for (size_t object = 0; object < nr_objects; ++object)
-    {
-        for (size_t training_pose = 0; training_pose < nr_training_poses; ++training_pose)
-        {
-            float best_dist = numeric_limits<float>::max();
-            float best_dist2 = numeric_limits<float>::max(); // second best
-            int sim_tmpl, sim_tmpl2;
-
-            // - find the first most similar template
-            for (size_t tmpl_pose = 0; tmpl_pose < nr_template_poses; tmpl_pose++)
-            {
-                float temp_dist = training_quats[object][training_pose].angularDistance(tmpl_quats[object][tmpl_pose]);
-                if (temp_dist >= best_dist) continue;
-                best_dist = temp_dist;
-                sim_tmpl = tmpl_pose;
-            }
-
-            // - push back the template
-            maxSimTmpl[object][training_pose].push_back(sim_tmpl);
-
-            // - find the second most similar template
-            for (size_t tmpl_pose = 0; tmpl_pose < nr_template_poses; tmpl_pose++)
-            {
-                float temp_dist = training_quats[object][training_pose].angularDistance(tmpl_quats[object][tmpl_pose]);
-                if (temp_dist >= best_dist2 || temp_dist == best_dist) continue;
-                best_dist2 = temp_dist;
-                sim_tmpl2 = tmpl_pose;
-            }
-
-            // - push back the template
-            maxSimTmpl[object][training_pose].push_back(sim_tmpl2);
-
-#if 0
-            imshow("query",showRGBDPatch(training_set[object][training_pose].data,false));
-            imshow("sim 1",showRGBDPatch(templates[object][maxSimTmpl[object][training_pose][0]].data,false));
-            imshow("sim 2",showRGBDPatch(templates[object][maxSimTmpl[object][training_pose][1]].data,false));
-            waitKey();
-#endif
-        }
-    }
-}
-
-void networkSolver::computeMaxSimTmpl()
-{
-    // Calculate maxSimTmpl: find the 2 most similar templates for each object in the training set
-    maxSimTmpl.assign(nr_objects, vector<vector<int>>(nr_training_poses, vector<int>()));
-    for (size_t object = 0; object < nr_objects; ++object)
-    {
-        for (size_t training_pose = 0; training_pose < nr_training_poses; ++training_pose)
-        {
-            float best_dist = numeric_limits<float>::min();
-            float best_dist2 = numeric_limits<float>::min(); // second best
-            int sim_tmpl, sim_tmpl2;
-            Vector3f training_tr(3), tmpl_tr(3);
-
-            for (size_t tr = 0; tr < 3; ++tr)
-                training_tr[tr] = training_set[object][training_pose].label.at<float>(0,5+tr);
-
-            // - find the first most similar template
-            for (size_t tmpl_pose = 0; tmpl_pose < nr_template_poses; tmpl_pose++)
-            {
-                for (size_t tr = 0; tr < 3; ++tr)
-                    tmpl_tr[tr] = templates[object][tmpl_pose].label.at<float>(0,5+tr);
-
-                float temp_dist = training_tr.dot(tmpl_tr);
-                if (temp_dist <= best_dist) continue;
-                best_dist = temp_dist;
-                sim_tmpl = tmpl_pose;
-            }
-
-            // - push back the template
-                maxSimTmpl[object][training_pose].push_back(sim_tmpl);
-
-
-            // - find the second most similar template
-            for (size_t tmpl_pose = 0; tmpl_pose < nr_template_poses; tmpl_pose++)
-            {
-                for (size_t tr = 0; tr < 3; ++tr)
-                    tmpl_tr[tr] = templates[object][tmpl_pose].label.at<float>(0,5+tr);
-
-                float temp_dist = training_tr.dot(tmpl_tr);
-                if (temp_dist <= best_dist2 || temp_dist == best_dist) continue;
-                best_dist2 = temp_dist;
-                sim_tmpl2 = tmpl_pose;
-            }
-
-            // - push back the template
-                maxSimTmpl[object][training_pose].push_back(sim_tmpl2);
-
-#if 0
-            imshow("query",showRGBDPatch(training_set[object][training_pose].data,false));
-            imshow("sim 1",showRGBDPatch(templates[object][maxSimTmpl[object][training_pose][0]].data,false));
-            imshow("sim 2",showRGBDPatch(templates[object][maxSimTmpl[object][training_pose][1]].data,false));
-            waitKey();
-#endif
-        }
-    }
 }
 }

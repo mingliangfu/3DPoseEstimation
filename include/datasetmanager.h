@@ -20,7 +20,7 @@
 #include "sphere.h"
 #include "datatypes.h"
 #include "hdf5handler.h"
-#include "utilities.h"
+#include "helper.h"
 
 using namespace Eigen;
 using namespace std;
@@ -34,49 +34,37 @@ class datasetManager
 public:
     datasetManager(string config);
     Benchmark loadLinemodBenchmark(string linemod_path, string sequence, int count=-1);
-    Benchmark loadBigBirdBenchmark(string linemod_path, string sequence, int count=-1);
-    vector<Background> loadBackgrounds(string backgrounds_path, int count=-1);
+    Benchmark loadBigbirdBenchmark(string bigbird_path, string sequence, int count=-1);
     Mat samplePatchWithScale(Mat &color, Mat &depth, Mat &normals, int center_x, int center_y, float z, float fx, float fy);
-    vector<Sample> extractSceneSamplesPaul(vector<Frame> &frames, Matrix3f &cam, int index, Model &model);
-    vector<Sample> extractSceneSamplesWadim(vector<Frame> &frames, Matrix3f &cam, int index);
-    vector<Sample> createTemplatesPaul(Model &model, Matrix3f &cam, int index);
-    vector<Sample> createTemplatesWadim(Model &model, Matrix3f &cam, int index, int subdiv);
-    void createSceneSamplesAndTemplates();
-    void saveSamples();
+    vector<Sample> extractRealSamplesPaul(vector<Frame> &frames, Matrix3f &cam, int index, Model &model);
+    vector<Sample> extractRealSamplesWadim(vector<Frame> &frames, Matrix3f &cam, int index);
+    vector<Sample> createSynthSamplesPaul(Model &model, Matrix3f &cam, int index);
+    vector<Sample> createSynthSamplesWadim(Model &model, Matrix3f &cam, int index, int subdiv);
+    void generateAndStoreSamples(int sampling_type); // 0 - Paul, 1 - Wadim
     void generateDatasets();
-    void computeQuaternions();
-    void fillVertexTmpl();
+    void computeMaxSimTmplInplane();
+    void computeMaxSimTmpl();
     void randomFill(Mat &patch, int type);
     void randomColorFill(Mat &patch);
     void randomShapeFill(Mat &patch);
+    vector<Background> loadBackgrounds(string backgrounds_path, int count=-1);
     void randomRealFill(Mat &patch);
 
     // Helper methods
     const vector<vector<Sample>>& getTrainingSet() const {return training_set;}
-    const vector<vector<Sample>>& getTemplateSet() const {return templates;}
+    const vector<vector<Sample>>& getTemplateSet() const {return template_set;}
     const vector<vector<Sample>>& getTestSet() const {return test_set;}
-    const vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>>& getTmplQuats() const {return tmpl_quats;}
-    const vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>>& getTrainingQuats() const {return training_quats;}
-    const vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>>& getTestQuats() const {return test_quats;}
-    const vector<string> getModels() const {return models;}
-
-    string getDatasetPath() {return dataset_path;}
-    string getHDF5Path() {return hdf5_path;}
-
-    int getTrainingSetSize() {return training_set[0].size();}
-    int getTemplateSetSize() {return templates[0].size();}
-    int getTestSetSize() {return test_set[0].size();}
-    int getNrObjects() {return used_models.size();}
+    const vector<vector<vector<int>>>& getMaxSimTmpl() const {return maxSimTmpl;}
 
 private:
     std::random_device ran;
-    vector<vector<Sample>> templates, training_set, test_set;
-    vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>> tmpl_quats, training_quats, test_quats;
-    unsigned int nr_objects, nr_training_poses, nr_template_poses, nr_test_poses;
+    vector<vector<Sample>> template_set, training_set, test_set;
+    unsigned int nr_objects;
+    vector<vector<vector<int>>> maxSimTmpl;
 
-    string dataset_path, hdf5_path, bg_path;
+    string dataset_path, hdf5_path, bg_path, dataset_name;
     vector<string> models, used_models;
-    unordered_map<string,int> model_index, global_model_index;
+    unordered_map<string,int> model_index;
     vector<int> rotInv;
     bool inplane, use_real;
     hdf5Handler h5;

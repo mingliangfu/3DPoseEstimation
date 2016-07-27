@@ -35,10 +35,8 @@ SOURCES += main.cpp \
     src/datasetmanager.cpp \
     src/networksolver.cpp \
     src/hdf5handler.cpp \
-    src/utilities.cpp \
-    src/networkevaluator.cpp
-
-
+    src/networkevaluator.cpp \
+    src/helper.cpp
 
 HEADERS += include/sphere.h \
     include/painter.h \
@@ -47,7 +45,4 @@ HEADERS += include/sphere.h \
     include/datatypes.h \
     include/networksolver.h \
     include/hdf5handler.h \
-    include/utilities.h
-
-
-
+    include/helper.h

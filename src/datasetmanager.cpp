@@ -3,29 +3,6 @@
 
 namespace sz {
 
-datasetManager::datasetManager(string config)
-{
-    boost::property_tree::ptree pt;
-    boost::property_tree::ini_parser::read_ini(config, pt);
-    dataset_path = pt.get<string>("paths.dataset_path");
-    hdf5_path = pt.get<string>("paths.hdf5_path");
-    bg_path = pt.get<string>("paths.background_path");
-
-    random_background = pt.get<int>("input.random_background");
-    use_real = pt.get<bool>("input.use_real");
-    inplane = pt.get<bool>("input.inplane");
-    models = to_array<string>(pt.get<string>("input.models"));
-    used_models = to_array<string>(pt.get<string>("input.used_models"));
-    rotInv = to_array<int>(pt.get<string>("input.rotInv"));
-    nr_objects = used_models.size();
-
-    // For each object build a mapping from model name to index number
-    for (size_t i = 0; i < used_models.size(); ++i) model_index[used_models[i]] = i;
-    // Global mapping
-    for (size_t i = 0; i < models.size(); ++i) global_model_index[models[i]] = i;
-
-}
-
 Benchmark datasetManager::loadLinemodBenchmark(string linemod_path, string sequence, int count /*=-1*/)
 {
     string dir_string = linemod_path + sequence;
@@ -40,12 +17,11 @@ Benchmark datasetManager::loadLinemodBenchmark(string linemod_path, string seque
     int last=0;
     filesystem::directory_iterator end_iter;
     for(filesystem::directory_iterator dir_iter(dir); dir_iter != end_iter ; ++dir_iter)
-        if (filesystem::is_regular_file(dir_iter->status()) )
+        if (filesystem::is_regular_file(dir_iter->status()))
         {
             string file = dir_iter->path().leaf().string();
             if (file.substr(0,5)=="color")
                 last = std::max(last,std::stoi(file.substr(5,file.length())));
-
         }
 
     if (count>-1) last = count;
@@ -69,7 +45,7 @@ Benchmark datasetManager::loadLinemodBenchmark(string linemod_path, string seque
                 pose >> frame.gt[0].second.matrix()(k,l);
         bench.frames.push_back(frame);
 
-        loadbar("  - loading frames: ",i,last);
+        loadbar("  - loading frames: ", i, last);
     }
 
     bench.cam = Matrix3f::Identity();
@@ -80,9 +56,9 @@ Benchmark datasetManager::loadLinemodBenchmark(string linemod_path, string seque
     return bench;
 }
 
-Benchmark datasetManager::loadBigBirdBenchmark(string linemod_path, string sequence, int count /*=-1*/)
+Benchmark datasetManager::loadBigbirdBenchmark(string bigbird_path, string sequence, int count /*=-1*/)
 {
-    string dir_string = linemod_path + sequence;
+    string dir_string = bigbird_path + sequence;
     cerr << "  - loading benchmark " << dir_string << endl;
 
     filesystem::path dir(dir_string);
@@ -111,23 +87,23 @@ Benchmark datasetManager::loadBigBirdBenchmark(string linemod_path, string seque
     // Read transformations
     vector<Isometry3f,Eigen::aligned_allocator<Isometry3f>> trans = h5.readBBTrans(dir_string + "/calibration.h5");
 
-    for (int np = 1; np <= 5; ++np) {
+    for (int np = 1 ; np <= 5; ++np) {
         for (int i = 0; i <= last; i += 3)
         {
             Frame frame;
             frame.nr = i * np;
             frame.color = imread(dir_string + "/NP" + to_string(np) + "_" + to_string(i)+".jpg");
-            frame.color = frame.color(Rect(0, 32, 1280, 960));
-            resize(frame.color, frame.color, Size(640,480)); // rescale to 640*480
+            resize(frame.color, frame.color, Size(640,512)); // rescale to 640*512
             // imshow("ColorScaled: ", frame.color); waitKey();
-            frame.depth = h5.readBBDepth(dir_string + "/NP" + to_string(np) + "_" + to_string(i) + ".h5");
+            frame.depth = Mat::zeros(frame.color.size(),CV_32F);
+            Mat demo = h5.readBBDepth(dir_string + "/NP" + to_string(np) + "_" + to_string(i) + ".h5");
+            resize(demo, demo, Size(576,432));
+            demo.copyTo(frame.depth(Rect(27, 35, demo.cols, demo.rows)));
             // imshow("Depth: ", frame.depth); waitKey();
             assert(!frame.color.empty() && !frame.depth.empty());
 
             Isometry3f pose = h5.readBBPose(dir_string + "/poses/NP5" + "_" + to_string(i) + "_pose.h5");
-
-            frame.gt.push_back({"object",Isometry3f::Identity()});
-
+            frame.gt.push_back({"object", Isometry3f::Identity()});
             frame.gt[0].second = trans[np-1] * pose.inverse();
             bench.frames.push_back(frame);
         }
@@ -138,7 +114,6 @@ Benchmark datasetManager::loadBigBirdBenchmark(string linemod_path, string seque
 
 vector<Background> datasetManager::loadBackgrounds(string backgrounds_path, int count /*=-1*/)
 {
-
     filesystem::path dir(backgrounds_path);
     if (!(filesystem::exists(dir) && filesystem::is_directory(dir)))
     {
@@ -167,8 +142,8 @@ vector<Background> datasetManager::loadBackgrounds(string backgrounds_path, int 
         bg.depth = imread(backgrounds_path + "depth_" + countf.str() + ".png",-1);
         assert(!bg.color.empty() && !bg.depth.empty());
         bg.depth.convertTo(bg.depth,CV_32F,0.001f);   // Bring depth map into meters
-//        imshow("Color: ", bg.color);
-//        imshow("Depth: ", bg.depth); waitKey();
+        // imshow("Color: ", bg.color);
+        // imshow("Depth: ", bg.depth); waitKey();
 
         // Filter depth
         Mat depth_mini(bg.depth.size().height, bg.depth.size().width, CV_8UC1);
@@ -182,8 +157,8 @@ vector<Background> datasetManager::loadBackgrounds(string backgrounds_path, int 
 
         // Add normals
         depth2normals(bg.depth, bg.normals, 539, 539, 0, 0);
-//        imshow("Normals: ", abs(bg.normals)); waitKey();
-//        imshow("Depth: ", bg.depth); waitKey();
+        // imshow("Normals: ", abs(bg.normals)); waitKey();
+        // imshow("Depth: ", bg.depth); waitKey();
 
         // Scale backgrounds down
         Size bg_mini_size = bg.color.size()/3;
@@ -192,7 +167,7 @@ vector<Background> datasetManager::loadBackgrounds(string backgrounds_path, int 
         resize(bg.depth,bg.depth,bg_mini_size,0,0,INTER_NEAREST); // Nearest-neighbor interpolation for depth!!!
 
         bgs.push_back(bg);
-        loadbar("  - loading backgrounds: ",i,last);
+        loadbar("Loading backgrounds: ",i,last);
     }
     return bgs;
 }
@@ -201,7 +176,11 @@ vector<Background> datasetManager::loadBackgrounds(string backgrounds_path, int 
 Mat datasetManager::samplePatchWithScale(Mat &color, Mat &depth, Mat &normals, int center_x, int center_y, float z, float fx, float fy)
 {
     // Make a cut of metric size m
-    float m = 0.2f;
+    float m;
+    if (dataset_name == "LineMOD") {m = 0.2f;}
+    else if (dataset_name == "BigBIRD") {m = 0.25f;}
+    else if (dataset_name == "Washington") {m = 0.2f;}
+    else {m = 0.2f;}
     int screenW = fx * m/z;
     int screenH = fy * m/z;
 
@@ -243,72 +222,40 @@ Mat datasetManager::samplePatchWithScale(Mat &color, Mat &depth, Mat &normals, i
     return final;
 }
 
-vector<Sample> datasetManager::extractSceneSamplesPaul(vector<Frame> &frames, Matrix3f &cam, int index, Model &model)
+vector<Sample> datasetManager::extractRealSamplesPaul(vector<Frame> &frames, Matrix3f &cam, int index, Model &model)
 {
     vector<Sample> samples;
     for (Frame &f : frames)
     {
-//         Vector3f centroid = f.gt * model.centroid;
-        Vector3f centroid = f.gt[0].second.translation();
+        Vector3f centroid;
+        if (dataset_name == "LineMOD") {centroid = f.gt[0].second.translation();}
+        else if (dataset_name == "BigBIRD") {centroid = f.gt[0].second * model.centroid;}
+        else if (dataset_name == "Washington") {centroid = f.gt[0].second.translation();}
+
         Vector3f projCentroid = cam * centroid;
         projCentroid /= projCentroid(2);
 
         // Compute normals
         depth2normals(f.depth,f.normals,cam);
 
-        Sample s;
-        s.data = samplePatchWithScale(f.color,f.depth,f.normals,projCentroid(0),projCentroid(1),centroid(2),cam(0,0),cam(1,1));
+        Sample sample;
+        sample.data = samplePatchWithScale(f.color,f.depth,f.normals,projCentroid(0),projCentroid(1),centroid(2),cam(0,0),cam(1,1));
 
         // Build 5-dimensional label: model index + quaternion + translation
-        s.label = Mat(1,8,CV_32F);
-        s.label.at<float>(0,0) = index;
+        sample.label = Mat(1,8,CV_32F);
+        sample.label.at<float>(0,0) = index;
         Quaternionf q(f.gt[0].second.linear());
         for (int i=0; i < 4; ++i)
-            s.label.at<float>(0,1+i) = q.coeffs()(i);
+            sample.label.at<float>(0,1+i) = q.coeffs()(i);
         for (size_t tr = 0; tr < 3; ++tr)
-            s.label.at<float>(0,5+tr) = f.gt[0].second.inverse().translation()(tr);
+            sample.label.at<float>(0,5+tr) = f.gt[0].second.inverse().translation()(tr);
 
-        samples.push_back(s);
-
-#if 0
-        // Show rgbd patch
-        showRGBDPatch(s.data);
-
-        // Show centroid 2D
-        Rect rect(projCentroid(0)-2, projCentroid(1)+2, 2, 2);
-        rectangle(f.depth, rect, Scalar(0,0,255), 3);
-        imshow("Depth", f.depth);
-
-        // Visualize the cloud
-        Mat cloud(f.depth.rows,f.depth.cols, CV_32FC3);
-        depth2cloud(f.depth, cloud, cam);
-
-        Mat object = viz::readCloud("/media/zsn/Storage/BMC/Master/Implementation/dataset_bigbird/detergent.ply");
-
-        // Visualize for the case where feat_dim is 3D
-        viz::Viz3d visualizer("Cloud");
-        viz::WCloud wcloud(cloud, f.color);
-
-        cv::Mat camcv; eigen2cv(f.gt.matrix(),camcv);
-        visualizer.setViewerPose(cv::Affine3f::Identity());
-
-        // visualizer.showWidget("coo", viz::WCoordinateSystem());
-        visualizer.showWidget("cloud", wcloud); // cv::Affine3f::translation(cv::Vec3f(0,0,0))
-        visualizer.showWidget("object", viz::WCloud(object, viz::Color::yellow()), cv::Affine3f(camcv));
-        visualizer.showWidget("centroid", viz::WSphere(Point3f(centroid[0], centroid[1], centroid[2]), 0.02, 10, viz::Color::red()));
-        visualizer.spin();
-
-        // Render the model
-        SphereRenderer renderer;
-        renderer.init(cam);
-        Mat col,dep;
-        renderer.renderView(model,f.gt,col,dep,false);
-#endif
+        samples.push_back(sample);
     }
     return samples;
 }
 
-vector<Sample> datasetManager::extractSceneSamplesWadim(vector<Frame> &frames, Matrix3f &cam, int index)
+vector<Sample> datasetManager::extractRealSamplesWadim(vector<Frame> &frames, Matrix3f &cam, int index)
 {
     vector<Sample> samples;
     for (Frame &f : frames)
@@ -323,24 +270,24 @@ vector<Sample> datasetManager::extractSceneSamplesWadim(vector<Frame> &frames, M
         // Compute normals
         depth2normals(f.depth,f.normals,cam);
 
-        Sample s;
-        s.data = samplePatchWithScale(f.color,f.depth,f.normals,projCentroid(0),projCentroid(1),z,cam(0,0),cam(1,1));
+        Sample sample;
+        sample.data = samplePatchWithScale(f.color,f.depth,f.normals,projCentroid(0),projCentroid(1),z,cam(0,0),cam(1,1));
 
         // Build 5-dimensional label: model index + quaternion + translation
-        s.label = Mat(1,8,CV_32F);
-        s.label.at<float>(0,0) = index;
+        sample.label = Mat(1,8,CV_32F);
+        sample.label.at<float>(0,0) = index;
         Quaternionf q(f.gt[0].second.linear());
         for (int i=0; i < 4; ++i)
-            s.label.at<float>(0,1+i) = q.coeffs()(i);
+            sample.label.at<float>(0,1+i) = q.coeffs()(i);
         for (size_t tr = 0; tr < 3; ++tr)
-            s.label.at<float>(0,5+tr) = f.gt[0].second.inverse().translation()(tr);
+            sample.label.at<float>(0,5+tr) = f.gt[0].second.inverse().translation()(tr);
 
-        samples.push_back(s);
+        samples.push_back(sample);
     }
     return samples;
 }
 
-vector<Sample> datasetManager::createTemplatesPaul(Model &model, Matrix3f &cam, int index)
+vector<Sample> datasetManager::createSynthSamplesPaul(Model &model, Matrix3f &cam, int index)
 {
     ifstream file(dataset_path + "paul/camPositionsElAz.txt");
     assert(file.good());
@@ -366,26 +313,37 @@ vector<Sample> datasetManager::createTemplatesPaul(Model &model, Matrix3f &cam, 
     // Render each and create proper sample
     SphereRenderer renderer;
     renderer.init(cam);
-    Mat color,depth,normals;
+    Mat color, depth, normals;
     Isometry3f pose = Isometry3f::Identity();
-    pose.translation()(2) = 0.4f;
+    Vector3f trans;
+    if (dataset_name == "LineMOD") {trans = Vector3f(0,0,0.4);}
+    else if (dataset_name == "BigBIRD") {trans = Vector3f(0,0,0.72);}
+    else if (dataset_name == "Washington") {trans = Vector3f(0,0,0.4);}
+    else {trans = Vector3f(0,0,0.4);}
 
     vector<Sample> samples;
     for (Matrix3f &m : camPos)
     {
-        // Instead of taking object centroid, take the surface point as central sample point
-        // float z = v.dep.at<float>(cam(1,2),cam(0,2));
-        // assert(z>0.0f);
-        float z = pose.translation()(2);
+        // Take object centroid
+        pose.linear() = m; pose.translation() = trans;
 
-        pose.linear() = m;
+        if (dataset_name == "BigBIRD") // adapt the pose
+        {
+            // Vector3f shift = pose.linear() * model.centroid + trans;
+            // pose.translation() = trans + (trans - shift);
+            Isometry3f pose_object = pose.inverse();
+            pose_object.translation() += model.centroid;
+            pose = pose_object.inverse();
+        }
+
+        // Render the view
         renderer.renderView(model,pose,color,depth,false);
 
         // Compute normals
         depth2normals(depth,normals,cam);
 
         Sample sample;
-        sample.data = samplePatchWithScale(color,depth,normals,cam(0,2),cam(1,2),z,cam(0,0),cam(1,1));
+        sample.data = samplePatchWithScale(color,depth,normals,cam(0,2),cam(1,2),trans(2),cam(0,0),cam(1,1));
 
         // Build 5-dimensional label: model index + quaternion + translation
         sample.label = Mat(1,8,CV_32F);
@@ -401,12 +359,12 @@ vector<Sample> datasetManager::createTemplatesPaul(Model &model, Matrix3f &cam, 
     return samples;
 }
 
-vector<Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, int index, int subdiv)
+vector<Sample> datasetManager::createSynthSamplesWadim(Model &model,Matrix3f &cam, int index, int subdiv)
 {
     // Create synthetic views
     SphereRenderer sphere(cam);
     Mat normals;
-    Vector3f scales(0.4, 1.1, 1.0);     // Render from 0.4 meters
+    Vector3f scales(0.4, 1.1, 1.0); // Render from 0.4 meters
 
     Vector3f in_plane_rots;
     if (inplane) { in_plane_rots = Vector3f(-45,15,45); }
@@ -434,22 +392,25 @@ vector<Sample> datasetManager::createTemplatesWadim(Model &model,Matrix3f &cam, 
         Quaternionf q(v.pose.linear());
         for (int i=0; i < 4; ++i)
             sample.label.at<float>(0,1+i) = q.coeffs()(i);
-
-        for (size_t tr = 0; tr < 3; ++tr) {
+        for (size_t tr = 0; tr < 3; ++tr)
             sample.label.at<float>(0,5+tr) = v.pose.inverse().translation()(tr);
-        }
 
         samples.push_back(sample);
     }
     return samples;
-
 }
 
-void datasetManager::createSceneSamplesAndTemplates()
+void datasetManager::generateAndStoreSamples(int sampling_type)
 {
-    for (size_t modelId = 0; modelId < used_models.size(); ++modelId) {
+    // Check if hdf5 files are available
+    vector<string> missing_models;
+    for (string &seq : used_models)
+        if (!fexists(hdf5_path + "realSamples_" + seq + ".h5") ||
+            !fexists(hdf5_path + "synthSamples_" + seq + ".h5") ||
+            !fexists(hdf5_path + "templates_" + seq + ".h5"))
+            missing_models.push_back(seq);
 
-        string model_name = used_models[modelId];
+    for (string &model_name : missing_models) {
 
         clog << "\nCreating samples and patches for " << model_name << ":" << endl;
 
@@ -458,83 +419,67 @@ void datasetManager::createSceneSamplesAndTemplates()
         model.loadPLY(dataset_path + model_name + ".ply");
 
         // - load frames of benchmark and visualize
-//         Benchmark bench = loadBigBirdBenchmark(dataset_path, model_name);
-        Benchmark bench = loadLinemodBenchmark(dataset_path, model_name);
-        // showGT(bench,model);
+        Benchmark bench;
+        if (dataset_name == "LineMOD") {bench = loadLinemodBenchmark(dataset_path, model_name);}
+        else if (dataset_name == "BigBIRD") {bench = loadBigbirdBenchmark(dataset_path, model_name);}
+        else if (dataset_name == "Washington") {bench = loadLinemodBenchmark(dataset_path, model_name);}
+        else {bench = loadLinemodBenchmark(dataset_path, model_name);}
 
         // Real data
         // - for each scene frame, extract RGBD sample
-        vector<Sample> realSamples = extractSceneSamplesPaul(bench.frames,bench.cam,model_index[model_name], model);
+        vector<Sample> real_samples = extractRealSamplesPaul(bench.frames, bench.cam, model_index[model_name], model);
 
-        // - store realSamples to HDF5 files
-        h5.write(hdf5_path + "realSamples_" + model_name +".h5", realSamples);
-        // for (Sample &s : realSamples) showRGBDPatch(s.data);
+        // - store real samples to HDF5 files
+        h5.write(hdf5_path + "realSamples_" + model_name +".h5", real_samples);
+        // for (Sample &s : real_samples) showRGBDPatch(s.data);
 
         // Synthetic data
         clog << "  - render synthetic data:" << endl;
-        // - create synthetic samples and templates
-        int subdivTmpl = 2; // sphere subdivision factor for templates
-        vector<Sample> templates = createTemplatesWadim(model, bench.cam, model_index[model_name], subdivTmpl);
-        vector<Sample> synthSamples = createTemplatesWadim(model, bench.cam, model_index[model_name], subdivTmpl+1);
-//         vector<Sample> temp = createTemplatesPaul(model, bench.cam, model_index[model_name]);
-//         vector<Sample> templates (temp.begin(),temp.begin() + 301);
-//         vector<Sample> synthSamples (temp.begin() + 302, temp.end());
+        vector<Sample> templates, synth_samples;
+        if (sampling_type) {
+            int subdivTmpl = 2; // sphere subdivision factor for templates
+            templates = createSynthSamplesWadim(model, bench.cam, model_index[model_name], subdivTmpl);
+            synth_samples = createSynthSamplesWadim(model, bench.cam, model_index[model_name], subdivTmpl+1);
+        } else {
+            vector<Sample> temp = createSynthSamplesPaul(model, bench.cam, model_index[model_name]);
+            templates.assign(temp.begin(),temp.begin() + 301);
+            synth_samples.assign(temp.begin() + 302, temp.end());
+        }
 
-        // - store realSamples to HDF5 files
+        // - store synthetic samples to HDF5 files
         h5.write(hdf5_path + "templates_" + model_name + ".h5", templates);
-        h5.write(hdf5_path + "synthSamples_" + model_name + ".h5", synthSamples);
-        // for (Sample &s : templates) showRGBDPatch(s.data);
-//        for (Sample &s : synthSamples) showRGBDPatch(s.data);
-
+        h5.write(hdf5_path + "synthSamples_" + model_name + ".h5", synth_samples);
+//         for (Sample &s : templates) showRGBDPatch(s.data);
+        // for (Sample &s : synth_samples) showRGBDPatch(s.data);
     }
 }
 
 void datasetManager::generateDatasets()
 {
-    training_set.clear();
-    test_set.clear();
-    templates.clear();
+    // Generate the hdf5 files if missing
+    generateAndStoreSamples(0);
 
+    // Clear the sets
+    training_set.clear();
+    template_set.clear();
+    test_set.clear();
+
+    // Load backgrounds for further use
     if (random_background == 3)
         backgrounds = loadBackgrounds(bg_path);
+
 
     for (string &seq : used_models)
     {
         // Read the data from hdf5 files
         vector<Sample> train_real(h5.read(hdf5_path + "realSamples_" + seq + ".h5"));
         vector<Sample> train_synth(h5.read(hdf5_path + "synthSamples_" + seq + ".h5"));
-        templates.push_back(h5.read(hdf5_path + "templates_" + seq + ".h5"));
+        template_set.push_back(h5.read(hdf5_path + "templates_" + seq + ".h5"));
         test_set.push_back(vector<Sample>());
 
-//        if (random_background) {
-//            for (Sample &s : train_synth) randomShapeFill(s.data);
-//            for (Sample &s : templates.back()) randomShapeFill(s.data);
-//            for (Sample &s : train_synth) randomColorFill(s.data);
-//            for (Sample &s : templates.back()) randomColorFill(s.data);
-//        }
-
         // Compute sizes and quaternions
-        unsigned int nr_template_poses = templates[0].size();
-        unsigned int nr_synth_poses = train_synth.size();
+        unsigned int nr_template_poses = template_set[0].size();
         unsigned int nr_real_poses = train_real.size();
-
-        // - read quaternion poses from templates
-        vector<Quaternionf, Eigen::aligned_allocator<Quaternionf> > tmpl_quats(nr_template_poses);
-        for  (size_t i=0; i < nr_template_poses; ++i)
-            for (size_t j=0; j < 4; ++j)
-                tmpl_quats[i].coeffs()(j) = templates.back()[i].label.at<float>(0,1+j);
-
-        // - read quaternion poses from synthetic data
-        vector<Quaternionf, Eigen::aligned_allocator<Quaternionf> > synth_quats(nr_synth_poses);
-        for (size_t i=0; i < nr_synth_poses; ++i)
-            for (size_t j=0; j < 4; ++j)
-                synth_quats[i].coeffs()(j) = train_synth[i].label.at<float>(0,1+j);
-
-        // - read quaternion poses from real data
-        vector<Quaternionf, Eigen::aligned_allocator<Quaternionf> > real_quats(nr_real_poses);
-        for (size_t i=0; i < nr_real_poses; ++i)
-            for (size_t j=0; j < 4; ++j)
-                real_quats[i].coeffs()(j) = train_real[i].label.at<float>(0,1+j);
 
         // Find the closest templates for each real sample
         vector<vector<int>> maxSimTmpl(nr_template_poses, vector<int>());
@@ -544,7 +489,7 @@ void datasetManager::generateDatasets()
             unsigned int sim_tmpl = 0;
             for (size_t tmpl = 0; tmpl < nr_template_poses; tmpl++)
             {
-                float temp_dist = real_quats[real_sample].angularDistance(tmpl_quats[tmpl]);
+                float temp_dist = train_real[real_sample].getQuat().angularDistance(template_set.back()[tmpl].getQuat());
                 if (temp_dist >= best_dist) continue;
                 best_dist = temp_dist;
                 sim_tmpl = tmpl;
@@ -584,41 +529,107 @@ void datasetManager::generateDatasets()
         random_shuffle(test_set[object].begin(), test_set[object].end());
     }
 
-    // Remember the sizes;
-    nr_training_poses = training_set[0].size();
-    nr_template_poses = templates[0].size();
-    nr_test_poses = test_set[0].size();
-
-    computeQuaternions();
+    // Compute MaxSimTmpls to build batches
+    if (inplane) { computeMaxSimTmplInplane(); }
+            else { computeMaxSimTmpl(); }
 }
 
-void datasetManager::computeQuaternions()
+void datasetManager::computeMaxSimTmplInplane()
 {
-    // Read quaternion poses from templates (they are identical for all objects)
-    tmpl_quats.assign(nr_objects, vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>());
-    for  (size_t i = 0; i < nr_objects; ++i) {
-        tmpl_quats[i].resize(templates[i].size());
-        for (size_t k = 0; k < tmpl_quats[i].size(); ++k)
-            for (int j = 0; j < 4; ++j)
-                tmpl_quats[i][k].coeffs()(j) = templates[i][k].label.at<float>(0,1+j);
-    }
+    size_t nr_training_poses = training_set.front().size();
+    size_t nr_template_poses = template_set.front().size();
 
-    // Read quaternion poses from training data
-    training_quats.assign(nr_objects, vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>());
-    for  (size_t i = 0; i < nr_objects; ++i) {
-        training_quats[i].resize(training_set[i].size());
-        for (size_t k = 0; k < training_quats[i].size(); ++k)
-            for (int j = 0; j < 4; ++j)
-                training_quats[i][k].coeffs()(j) = training_set[i][k].label.at<float>(0,1+j);
-    }
+    // Calculate maxSimTmpl: find the 2 most similar templates for each object in the training set
+    maxSimTmpl.assign(nr_objects, vector<vector<int>>(nr_training_poses, vector<int>()));
+    for (size_t object = 0; object < nr_objects; ++object)
+    {
+        for (size_t training_pose = 0; training_pose < nr_training_poses; ++training_pose)
+        {
+            float best_dist = numeric_limits<float>::max();
+            float best_dist2 = numeric_limits<float>::max(); // second best
+            int sim_tmpl, sim_tmpl2;
 
-    // Read quaternion poses from test data
-    test_quats.assign(nr_objects, vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>());
-    for  (size_t i = 0; i < nr_objects; ++i) {
-        test_quats[i].resize(test_set[i].size());
-        for (size_t k = 0; k < test_quats[i].size(); ++k)
-            for (int j = 0; j < 4; ++j)
-                test_quats[i][k].coeffs()(j) = test_set[i][k].label.at<float>(0,1+j);
+            // - find the first most similar template
+            for (size_t tmpl_pose = 0; tmpl_pose < nr_template_poses; tmpl_pose++)
+            {
+                float temp_dist = training_set[object][training_pose].getQuat().angularDistance(template_set[object][tmpl_pose].getQuat());
+                if (temp_dist >= best_dist) continue;
+                best_dist = temp_dist;
+                sim_tmpl = tmpl_pose;
+            }
+
+            // - push back the template
+            maxSimTmpl[object][training_pose].push_back(sim_tmpl);
+
+            // - find the second most similar template
+            for (size_t tmpl_pose = 0; tmpl_pose < nr_template_poses; tmpl_pose++)
+            {
+                float temp_dist = training_set[object][training_pose].getQuat().angularDistance(template_set[object][tmpl_pose].getQuat());
+                if (temp_dist >= best_dist2 || temp_dist == best_dist) continue;
+                best_dist2 = temp_dist;
+                sim_tmpl2 = tmpl_pose;
+            }
+
+            // - push back the template
+            maxSimTmpl[object][training_pose].push_back(sim_tmpl2);
+
+#if 0
+            imshow("query",showRGBDPatch(training_set[object][training_pose].data,false));
+            imshow("sim 1",showRGBDPatch(template_set[object][maxSimTmpl[object][training_pose][0]].data,false));
+            imshow("sim 2",showRGBDPatch(template_set[object][maxSimTmpl[object][training_pose][1]].data,false));
+            waitKey();
+#endif
+        }
+    }
+}
+
+void datasetManager::computeMaxSimTmpl()
+{
+    size_t nr_training_poses = training_set.front().size();
+    size_t nr_template_poses = template_set.front().size();
+
+    // Calculate maxSimTmpl: find the 2 most similar templates for each object in the training set
+    maxSimTmpl.assign(nr_objects, vector<vector<int>>(nr_training_poses, vector<int>()));
+    for (size_t object = 0; object < nr_objects; ++object)
+    {
+        for (size_t training_pose = 0; training_pose < nr_training_poses; ++training_pose)
+        {
+            float best_dist = numeric_limits<float>::min();
+            float best_dist2 = numeric_limits<float>::min(); // second best
+            int sim_tmpl, sim_tmpl2;
+
+            // - find the first most similar template
+            for (size_t tmpl_pose = 0; tmpl_pose < nr_template_poses; tmpl_pose++)
+            {
+                float temp_dist = training_set[object][training_pose].getTrans().dot(template_set[object][tmpl_pose].getTrans());
+                if (temp_dist <= best_dist) continue;
+                best_dist = temp_dist;
+                sim_tmpl = tmpl_pose;
+            }
+
+            // - push back the template
+            maxSimTmpl[object][training_pose].push_back(sim_tmpl);
+
+
+            // - find the second most similar template
+            for (size_t tmpl_pose = 0; tmpl_pose < nr_template_poses; tmpl_pose++)
+            {
+                float temp_dist = training_set[object][training_pose].getTrans().dot(template_set[object][tmpl_pose].getTrans());
+                if (temp_dist <= best_dist2 || temp_dist == best_dist) continue;
+                best_dist2 = temp_dist;
+                sim_tmpl2 = tmpl_pose;
+            }
+
+            // - push back the template
+            maxSimTmpl[object][training_pose].push_back(sim_tmpl2);
+
+#if 0
+            imshow("query",showRGBDPatch(training_set[object][training_pose].data,false));
+            imshow("sim 1",showRGBDPatch(template_set[object][maxSimTmpl[object][training_pose][0]].data,false));
+            imshow("sim 2",showRGBDPatch(template_set[object][maxSimTmpl[object][training_pose][1]].data,false));
+            waitKey();
+#endif
+        }
     }
 }
 
@@ -676,7 +687,7 @@ void datasetManager::randomShapeFill(Mat &patch)
       circle(tmp_dep, center, rad, Scalar(color(ran)), -1, 8);
 
     }
-//    medianBlur(tmp_rgb, tmp_rgb, 5);
+    // medianBlur(tmp_rgb, tmp_rgb, 5);
     GaussianBlur(tmp_rgb, tmp_rgb, Size(5,5), 0, 0);
 
     // Store the mask
@@ -687,7 +698,7 @@ void datasetManager::randomShapeFill(Mat &patch)
     tmp_dep.copyTo(patch_dep,mask);
 
     cv::merge(vector<Mat>{patch_rgb,patch_dep,patch_nor},patch);
-//    showRGBDPatch(patch, true);
+    // showRGBDPatch(patch, true);
 
 }
 
@@ -711,7 +722,6 @@ void datasetManager::randomRealFill(Mat &patch)
     std::uniform_int_distribution<int> r_y(patch_size.height/2, bg_size.height - patch_size.height/2);
 
     // Find a center point
-    float depth;
     int bg = r_bg(ran), center_x = r_x(ran), center_y = r_y(ran);
 
     // Check if image will be inside the bounds
@@ -721,7 +731,6 @@ void datasetManager::randomRealFill(Mat &patch)
         { bg = r_bg(ran), center_x = r_x(ran), center_y = r_y(ran); }
 
     int tl_x, tl_y; // Estimate top left corner
-    depth = backgrounds[bg].depth.at<float>(center_x, center_y);
     tl_x = center_x - patch_size.width/2;
     tl_y = center_y - patch_size.height/2;
 
@@ -746,8 +755,27 @@ void datasetManager::randomRealFill(Mat &patch)
     medianBlur(patch_nor, patch_nor, 3);
 
     cv::merge(vector<Mat>{patch_rgb,patch_dep,patch_nor},patch);
-//    showRGBDPatch(patch, true);
-
+    // showRGBDPatch(patch, true);
 }
 
+datasetManager::datasetManager(string config)
+{
+    boost::property_tree::ptree pt;
+    boost::property_tree::ini_parser::read_ini(config, pt);
+    dataset_path = pt.get<string>("paths.dataset_path");
+    hdf5_path = pt.get<string>("paths.hdf5_path");
+    bg_path = pt.get<string>("paths.background_path");
+
+    dataset_name = pt.get<string>("input.dataset_name");
+    random_background = pt.get<int>("input.random_background");
+    use_real = pt.get<bool>("input.use_real");
+    inplane = pt.get<bool>("input.inplane");
+    models = to_array<string>(pt.get<string>("input.models"));
+    used_models = to_array<string>(pt.get<string>("input.used_models"));
+    rotInv = to_array<int>(pt.get<string>("input.rotInv"));
+    nr_objects = used_models.size();
+
+    // For each object build a mapping from model name to index number
+    for (size_t i = 0; i < models.size(); ++i) model_index[models[i]] = i;
+}
 }

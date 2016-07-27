@@ -21,7 +21,6 @@ int main(int argc, char *argv[])
     string config(argv[1]);
 
     datasetManager db(config);
-    db.createSceneSamplesAndTemplates();
     db.generateDatasets();
 
     // Initialize the solver

@@ -224,8 +224,6 @@ vector<Sample> hdf5Handler::readTensorFlow(string filename)
 }
 
 
-
-
 Isometry3f hdf5Handler::readBBPose(string filename)
 {
    Isometry3f poseMat;
@@ -302,16 +300,16 @@ Mat hdf5Handler::readBBDepth(string filename)
 Matrix3f hdf5Handler::readBBIntristicMats(string filename)
 {
     vector<Matrix3f,Eigen::aligned_allocator<Matrix3f>> cams(5, Matrix3f());
-    Matrix3f argcam = Matrix3f::Zero();
+    Matrix3f avgcam = Matrix3f::Zero();
     try
     {
         H5::H5File file(filename, H5F_ACC_RDONLY);
 
-        H5::DataSet np1 = file.openDataSet("NP1_depth_K");
-        H5::DataSet np2 = file.openDataSet("NP2_depth_K");
-        H5::DataSet np3 = file.openDataSet("NP3_depth_K");
-        H5::DataSet np4 = file.openDataSet("NP4_depth_K");
-        H5::DataSet np5 = file.openDataSet("NP5_depth_K");
+        H5::DataSet np1 = file.openDataSet("NP1_rgb_K");
+        H5::DataSet np2 = file.openDataSet("NP2_rgb_K");
+        H5::DataSet np3 = file.openDataSet("NP3_rgb_K");
+        H5::DataSet np4 = file.openDataSet("NP4_rgb_K");
+        H5::DataSet np5 = file.openDataSet("NP5_rgb_K");
 
         H5::DataSpace np_space = np1.getSpace();
         vector<hsize_t> np_dims(np_space.getSimpleExtentNdims());
@@ -356,12 +354,14 @@ Matrix3f hdf5Handler::readBBIntristicMats(string filename)
         for (size_t x = 0; x < np_dims[0]; ++x) {
             for (size_t y = 0; y < np_dims[1]; ++y) {
                 for (size_t sum = 0; sum < cams.size(); ++sum) {
-                    argcam(x,y) += cams[sum].matrix()(x,y);
+                    avgcam(x,y) += cams[sum].matrix()(x,y);
                 }
-                argcam(x,y) /= cams.size();
+                avgcam(x,y) /= cams.size();
             }
         }
-        return cams[0];
+
+        avgcam /= 2; avgcam(2,2) = 1;
+        return avgcam;
     }
     catch(H5::Exception error)
     {

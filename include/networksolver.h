@@ -22,6 +22,7 @@
 #include "hdf5handler.h"
 #include "datasetmanager.h"
 #include "networkevaluator.h"
+#include "helper.h"
 
 using namespace Eigen;
 using namespace std;
@@ -36,6 +37,8 @@ class networkSolver
 {
 public:
     networkSolver(string config, datasetManager *db);
+    void readParam(string config);
+
     void buildBatchQueue(size_t batch_size, size_t triplet_size, size_t epoch_iter,
                          size_t slice, size_t channels, size_t target_size, std::queue<vector<float>> &batch_queue);
     vector<Sample> buildBatch(int batch_size, unsigned int triplet_size, int iter, bool bootstrapping);
@@ -43,18 +46,11 @@ public:
     void binarizeNet(int resume_iter=0);
 
     bool computeKNN(caffe::Net<float> &CNN);
-    void visualizeKNN(caffe::Net<float> &CNN, vector<string> test_models,
-                      const vector<vector<Sample> > &test_set,
-                      const vector<vector<Sample> > &templates);
     bool bootstrap(caffe::Net<float> &CNN, int iter);
-
-    void readParam(string config);
-    void computeMaxSimTmplInplane();
-    void computeMaxSimTmpl();
 
     hdf5Handler h5;
     std::random_device ran;
-    vector<vector<vector<int>>> maxSimTmpl, maxSimKNNTmpl;
+    vector<vector<vector<int>>> maxSimKNNTmpl;
     unordered_map<string,int> model_index, global_model_index;
     vector<int> rotInv;
     unsigned int nr_objects, nr_training_poses, nr_template_poses, nr_test_poses;
@@ -66,8 +62,8 @@ public:
 
     // Const references to db objects
     datasetManager *db;
-    const vector<vector<Sample>>& templates, training_set, test_set;
-    const vector<vector<Quaternionf, Eigen::aligned_allocator<Quaternionf>>>& tmpl_quats, training_quats, test_quats;
+    const vector<vector<Sample>>& template_set, training_set, test_set;
+    const vector<vector<vector<int>>>& maxSimTmpl;
 
     // Config parameters
     vector<string> used_models, models;

@@ -72,9 +72,9 @@ private:
     // Rect in the image which should be rendered.
     Rect render_rect, copy_rect;
     //OpenGL near/far.
-    float m_near,m_far;
+    float m_near, m_far;
     // OpenGL viewport dimensions
-    int m_height, m_width;
+    int m_width, m_height;
 
     //Background RGB color
     Vector3f m_background;

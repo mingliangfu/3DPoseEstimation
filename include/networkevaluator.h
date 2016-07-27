@@ -12,7 +12,7 @@
 #include "caffe/sgd_solvers.hpp"
 
 #include "datatypes.h"
-#include "utilities.h"
+#include "helper.h"
 
 using namespace std;
 using namespace cv;
