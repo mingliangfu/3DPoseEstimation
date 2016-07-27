@@ -56,6 +56,11 @@ public:
     const vector<vector<Sample>>& getTestSet() const {return test_set;}
     const vector<vector<vector<int>>>& getMaxSimTmpl() const {return maxSimTmpl;}
 
+    // Keep your fingers away from these, Sergey!
+    const vector<string>& getModels() const {return used_models;}
+    string getDatasetPath() const {return dataset_path;}
+    string getHDF5Path() const {return hdf5_path;}
+
 private:
     std::random_device ran;
     vector<vector<Sample>> template_set, training_set, test_set;
