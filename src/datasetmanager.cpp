@@ -112,6 +112,76 @@ Benchmark datasetManager::loadBigbirdBenchmark(string bigbird_path, string seque
     return bench;
 }
 
+Benchmark datasetManager::loadBenjaminBenchmark(string benjamin_path, string sequence, int index)
+{
+    string dir_string = benjamin_path + sequence;
+    cerr << "  - loading benchmark " << dir_string << endl;
+
+    filesystem::path dir(dir_string);
+    if (!(filesystem::exists(dir) && filesystem::is_directory(dir)))
+    {
+        cout << "Could not open data in " << dir_string << ". Aborting..." << endl;
+        return Benchmark();
+    }
+    int last=0;
+    Benchmark bench;
+    filesystem::directory_iterator end_iter;
+    for(filesystem::directory_iterator dir_iter(dir); dir_iter != end_iter ; ++dir_iter)
+        if (filesystem::is_regular_file(dir_iter->status()) )
+        {
+            Frame frame;
+            string file = dir_iter->path().leaf().string();
+            if (file.find("_color.png")< file.size())
+            {
+                // Read color
+                frame.color = imread(dir_string + "/" + file);
+
+                // Read depth from binary
+                ifstream fileStream(dir_string + "/" + file.substr(0, file.find("_color.png")) + "_depth.raw", ios::binary);
+                uint16_t m, rows, cols;
+                fileStream.read((char*)&rows, sizeof(uint16_t));
+                fileStream.read((char*)&cols, sizeof(uint16_t));
+
+                frame.depth = Mat::zeros(rows, cols, CV_32FC1); //Matrix to store values
+
+                for (int i = 0; i < rows*cols; ++i) {
+                    fileStream.read((char*)&m, sizeof(uint16_t));
+                    int temprow = i / cols;
+                    int tempcol = i % cols;
+                    frame.depth.at<float>(temprow, tempcol) = (float)m*0.0001f;
+                    if (m != 0) cout << (float)m*0.0001f << endl;
+                }
+
+                frame.color.convertTo(frame.color,CV_32FC3, 1/255.f);
+
+                imshow("Color: ", frame.color);
+                imshow("Depth: ", frame.depth); waitKey();
+
+                // Add pose matrix
+                ifstream pose(dir_string + "/" + file.substr(0, file.find("_color.png")) + "_pose.txt");
+                assert(pose.is_open());
+
+                frame.gt.push_back({sequence,Isometry3f::Identity()});
+
+                for (int k=0; k < 4;k++)
+                    for(int l=0; l < 4;l++)
+                        pose >> frame.gt[0].second.matrix()(k,l);
+
+                bench.frames.push_back(frame);
+
+//                loadbar("  - loading frames: ", i, last);
+            }
+        }
+
+        // Save intristic matrix
+        bench.cam = Matrix3f::Identity();
+        bench.cam(0,0) = 572.4114f;
+        bench.cam(0,2) = 325.2611f;
+        bench.cam(1,1) = 573.5704f;
+        bench.cam(1,2) = 242.0489f;
+        return bench;
+}
+
 vector<Background> datasetManager::loadBackgrounds(string backgrounds_path, int count /*=-1*/)
 {
     filesystem::path dir(backgrounds_path);

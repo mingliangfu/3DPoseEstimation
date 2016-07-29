@@ -222,11 +222,8 @@ void networkEvaluator::computeHistogram(caffe::Net<float> &CNN,
              { histo[0]++; continue; }
 
              // Get the quaternions
-             Quaternionf query_quat, knn_quat;
-             for (int q = 0; q < 4; ++q) {
-                 query_quat.coeffs()(q) = test_set[query_object][query_pose].label.at<float>(0,1+q);
-                 knn_quat.coeffs()(q) = templates[knn_object][knn_pose].label.at<float>(0,1+q);
-             }
+             Quaternionf query_quat = test_set[query_object][query_pose].getQuat();
+             Quaternionf knn_quat = templates[knn_object][knn_pose].getQuat();
 
              // Angular difference
              float diff;
