@@ -1,10 +1,9 @@
 #include "../include/networksolver.h"
-//#define THREADED
 
 namespace sz {
 
 networkSolver::networkSolver(string config, datasetManager* db): db(db), template_set(db->getTemplateSet()), training_set(db->getTrainingSet()),
-                                                                 test_set(db->getTestSet()), maxSimTmpl(db->getMaxSimTmpl()), config(config)
+    test_set(db->getTestSet()), maxSimTmpl(db->getMaxSimTmpl()), config(config)
 {
     // Read config parameters
     readParam(config);
@@ -96,7 +95,7 @@ vector<Sample> networkSolver::buildBatch(int batch_size, unsigned int triplet_si
                         pusher1 = ran_tpl(ran);
                     triplet.pusher1.copySample(template_set[object][pusher1]);
 
-                // -- if model is normal
+                    // -- if model is normal
                 } else {
                     pusher1 = ran_tpl(ran);
                     while(pusher1 == puller && pusher1 == pusher0) pusher1 = ran_tpl(ran);
@@ -112,7 +111,7 @@ vector<Sample> networkSolver::buildBatch(int batch_size, unsigned int triplet_si
                 triplet.pusher2.copySample(template_set[knn_object][knn_pose]);
             } else {
                 // - template from another object
-                pusher2 = ran_obj(ran);  
+                pusher2 = ran_obj(ran);
                 while (pusher2 == object) pusher2 = ran_obj(ran);
                 triplet.pusher2.copySample(template_set[pusher2][ran_tpl(ran)]);
             }
@@ -127,7 +126,7 @@ vector<Sample> networkSolver::buildBatch(int batch_size, unsigned int triplet_si
                     pusher1 = ran_tpl(ran);
                 triplet.pusher1.copySample(template_set[object][pusher1]);
 
-            // - if model is normal
+                // - if model is normal
             } else {
                 pusher1 = ran_tpl(ran);
                 while(pusher1 == puller && pusher1 == pusher0) pusher1 = ran_tpl(ran);
@@ -169,7 +168,7 @@ vector<Sample> networkSolver::buildBatch(int batch_size, unsigned int triplet_si
     return batch;
 }
 
-void networkSolver::trainNet(int resume_iter)
+void networkSolver::trainNet(int resume_iter, bool threaded)
 {
     // Set network parameters
     caffe::SolverParameter solver_param;
@@ -202,27 +201,24 @@ void networkSolver::trainNet(int resume_iter)
     const int channels =  input_data_layer->channels();
     const int target_size = input_data_layer->height();
     const int slice = input_data_layer->height()*input_data_layer->width();
+    const int img_size = slice * channels;
 
     unsigned int triplet_size = 5;
     unsigned int epoch_iter = nr_objects * nr_training_poses / (batch_size/triplet_size);
 
 
-#ifdef THREADED
-    vector<float> batch_caffe;
-    // Start threads
-    // - number of threads supported
-    size_t nr_threads = std::thread::hardware_concurrency();
-    queue<vector<float>> batch_queue;
-    vector<std::thread> threads(nr_threads/2);
-    // - start threaded batch builders
-    thread_iter = 0;
-    for(std::thread &t : threads)
-        t = std::thread(&networkSolver::buildBatchQueue, this, batch_size, triplet_size, epoch_iter,
-                        slice, channels, target_size, std::ref(batch_queue));
-#else
     vector<float> batch_caffe(batch_size * slice*channels,0);
-    vector<Sample> batch;
-#endif
+    queue<vector<float>> batch_queue;
+    vector<std::thread> threads(std::thread::hardware_concurrency()/2); // - number of threads supported/2
+
+    if (threaded)
+    {
+        // Start threaded batch builders
+        thread_iter = 0;
+        for(std::thread &t : threads)
+            t = std::thread(&networkSolver::buildBatchQueue, this, batch_size, triplet_size, epoch_iter,
+                            slice, channels, target_size, std::ref(batch_queue));
+    }
 
     // Perform training
     for (size_t training_round = 0; training_round < num_training_rounds; ++training_round)
@@ -231,27 +227,32 @@ void networkSolver::trainNet(int resume_iter)
         {
             for (size_t iter = 0; iter < epoch_iter; iter++)
             {
-#ifdef THREADED
-                // Get a batch from the queue
-                std::unique_lock<std::mutex> lock(queue_mutex);
-                cond.wait(lock, [&](){return !batch_queue.empty();}); // wait until the queue is not empty
-                batch_caffe = batch_queue.front();
-                batch_queue.pop();
-                cond.notify_all();
-                lock.unlock();
-#else
-                batch = buildBatch(batch_size, triplet_size, iter, bootstrapping);
 
-                // Fill linear batch memory with input data in Caffe layout with channel-first and set as network input
-                for (size_t i=0; i < batch.size(); ++i)
+                if (threaded)
                 {
-                    int currImg = i * slice*channels;
-                    for (int ch = 0; ch < channels ; ++ch)
-                        for (int y = 0; y < target_size; ++y)
-                            for (int x = 0; x < target_size; ++x)
-                                batch_caffe[currImg + slice*ch + y*target_size + x] = batch[i].data.ptr<float>(y)[x*channels + ch];
+                    // Get a batch from the queue
+                    std::unique_lock<std::mutex> lock(queue_mutex);
+                    cond.wait(lock, [&](){return !batch_queue.empty();}); // wait until the queue is not empty
+                    batch_caffe = batch_queue.front();
+                    batch_queue.pop();
+                    cond.notify_all();
+                    lock.unlock();
                 }
-#endif
+                else
+                {
+                    vector<Sample> batch = buildBatch(batch_size, triplet_size, iter, bootstrapping);
+
+                    // Fill linear batch memory with input data in Caffe layout with channel-first and set as network input
+                    for (size_t i=0; i < batch.size(); ++i)
+                    {
+                        for (int h = 0; h < target_size; ++h) {
+                            const float* ptr = batch[i].data.ptr<float>(h);
+                            for (int w = 0; w < target_size; ++w)
+                                for (int c = 0; c < channels; ++c)
+                                    batch_caffe[i*img_size + (c * target_size + h) * target_size + w] = *(ptr++);
+                        }
+                    }
+                }
 
                 input_data_layer->set_cpu_data(batch_caffe.data());
                 solver.Step(1);
@@ -275,16 +276,18 @@ void networkSolver::trainNet(int resume_iter)
         } else {
             eval::computeHistogram(testCNN, template_set, training_set, test_set, rotInv, config, snapshot_iter);
         }
-    // bootstrapping = computeKNN(testCNN);
+        // bootstrapping = computeKNN(testCNN);
     }
     solver.Snapshot();
     clog << "Training finished!" << endl;
 
-#ifdef THREADED
-    // Detach all threads
-    for(std::thread &t : threads)
-        t.detach();
-#endif
+    if (threaded)
+    {
+        // Detach all threads
+        for(std::thread &t : threads)
+            t.detach();
+    }
+
 }
 
 

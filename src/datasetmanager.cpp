@@ -499,9 +499,9 @@ void datasetManager::generateAndStoreSamples(int sampling_type)
         // - for each scene frame, extract RGBD sample
         vector<Sample> real_samples = extractRealSamplesPaul(bench.frames, bench.cam, model_index[model_name], model);
 
-        // - store real samples to HDF5 files
+        // - store realSamples to HDF5 files
         h5.write(hdf5_path + "realSamples_" + model_name +".h5", real_samples);
-        // for (Sample &s : real_samples) showRGBDPatch(s.data);
+        //for (Sample &s : realSamples) showRGBDPatch(s.data,true);
 
         // Synthetic data
         clog << "  - render synthetic data:" << endl;
@@ -519,8 +519,9 @@ void datasetManager::generateAndStoreSamples(int sampling_type)
         // - store synthetic samples to HDF5 files
         h5.write(hdf5_path + "templates_" + model_name + ".h5", templates);
         h5.write(hdf5_path + "synthSamples_" + model_name + ".h5", synth_samples);
-//         for (Sample &s : templates) showRGBDPatch(s.data);
-        // for (Sample &s : synth_samples) showRGBDPatch(s.data);
+        //for (Sample &s : templates) showRGBDPatch(s.data,true);
+        //for (Sample &s : synth_samples) showRGBDPatch(s.data,true);
+
     }
 }
 
@@ -832,6 +833,7 @@ datasetManager::datasetManager(string config)
 {
     boost::property_tree::ptree pt;
     boost::property_tree::ini_parser::read_ini(config, pt);
+
     dataset_path = pt.get<string>("paths.dataset_path");
     hdf5_path = pt.get<string>("paths.hdf5_path");
     bg_path = pt.get<string>("paths.background_path");
@@ -844,6 +846,11 @@ datasetManager::datasetManager(string config)
     used_models = to_array<string>(pt.get<string>("input.used_models"));
     rotInv = to_array<int>(pt.get<string>("input.rotInv"));
     nr_objects = used_models.size();
+
+    if ((dataset_name != "LineMOD") &&
+        (dataset_name != "BigBIRD") &&
+        (dataset_name != "Washington"))
+        throw runtime_error("Unknown dataset: " + dataset_name +"!");
 
     // For each object build a mapping from model name to index number
     for (size_t i = 0; i < models.size(); ++i) model_index[models[i]] = i;

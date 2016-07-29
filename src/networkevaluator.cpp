@@ -32,16 +32,17 @@ Mat networkEvaluator::computeDescriptors(caffe::Net<float> &CNN, vector<Sample> 
             // Fill linear batch memory with input data in Caffe layout with channel-first
             for (size_t j=0; j < currIdxs.size(); ++j)
             {
-                Mat &patch = samples[currIdxs[j]].data;
-                int currImg = j*img_size;
-                for (int ch=0; ch < channels ; ++ch)
-                    for (int y = 0; y < targetSize; ++y)
-                        for (int x = 0; x < targetSize; ++x)
-                            data[currImg + slice*ch + y*targetSize + x] = patch.ptr<float>(y)[x*channels + ch];
+                Mat &patch = samples[currIdxs[j]].data;               
+                for (int h = 0; h < targetSize; ++h) {
+                    const float* ptr = patch.ptr<float>(h);
+                    for (int w = 0; w < targetSize; ++w)
+                        for (int c = 0; c < channels; ++c)
+                            data[j*img_size + (c * targetSize + h) * targetSize + w] = *(ptr++);
+                }
             }
             // Copy data memory into Caffe input layer, process batch and copy result back
             input_layer->set_cpu_data(data.data());
-            vector< caffe::Blob<float>* > out = CNN.ForwardPrefilled();
+            vector< caffe::Blob<float>* > out = CNN.Forward();
 
             for (size_t j=0; j < currIdxs.size(); ++j)
                 memcpy(descs.ptr<float>(currIdxs[j]), out[0]->cpu_data() + j*desc_dim, desc_dim*sizeof(float));

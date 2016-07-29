@@ -27,7 +27,7 @@ int main(int argc, char *argv[])
     networkSolver solver(config, &db);
 
     // Train the network
-    solver.trainNet(0);
+    solver.trainNet(0,true);
 
     return 0;
 }
