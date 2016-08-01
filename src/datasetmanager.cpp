@@ -357,6 +357,17 @@ vector<Sample> datasetManager::extractRealSamplesWadim(vector<Frame> &frames, Ma
     return samples;
 }
 
+void datasetManager::loadLinemodHardNegatives()
+{
+    for (string &s : used_models)
+    {
+        string file = hdf5_path + "negs_" + s + ".h5";
+        if (!boost::filesystem::exists(file))
+            throw runtime_error(file + " not found!");
+        hard_negatives[s] = h5.read(file);
+    }
+}
+
 vector<Sample> datasetManager::createSynthSamplesPaul(Model &model, Matrix3f &cam, int index)
 {
     ifstream file(dataset_path + "paul/camPositionsElAz.txt");

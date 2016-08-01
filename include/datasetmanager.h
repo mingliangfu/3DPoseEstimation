@@ -41,6 +41,10 @@ public:
     vector<Sample> extractRealSamplesWadim(vector<Frame> &frames, Matrix3f &cam, int index);
     vector<Sample> createSynthSamplesPaul(Model &model, Matrix3f &cam, int index);
     vector<Sample> createSynthSamplesWadim(Model &model, Matrix3f &cam, int index, int subdiv);
+
+
+    void loadLinemodHardNegatives();
+
     void generateAndStoreSamples(int sampling_type); // 0 - Paul, 1 - Wadim
     void generateDatasets();
     void computeMaxSimTmplInplane();
@@ -59,6 +63,7 @@ public:
 
     // Keep your fingers away from these, Sergey!
     const vector<string>& getModels() const {return used_models;}
+    const unordered_map< string, vector<Sample> >& getHardNegatives() const {return hard_negatives;}
     string getDatasetPath() const {return dataset_path;}
     string getHDF5Path() const {return hdf5_path;}
 
@@ -75,6 +80,9 @@ private:
     bool inplane, use_real;
     hdf5Handler h5;
     vector<Background> backgrounds;
+
+    unordered_map<string, vector<Sample> > hard_negatives;
+
     int random_background;
 
 };
