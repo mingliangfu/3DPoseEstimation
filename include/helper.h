@@ -53,6 +53,9 @@ inline bool fexists(const string filename) {
 
 // Show RGB-D patch
 Mat showRGBDPatch(const Mat &patch, bool show = true);
+
+Mat showTriplet(const Mat &p0,const Mat &p1,const Mat &p2,const Mat &p3,const Mat &p4, bool show = true);
+
 // Compute normals
 void depth2normals(const Mat &depth, Mat &normals, float fx, float fy, float ox, float oy);
 inline void depth2normals(const Mat &depth, Mat &normals, Matrix3f &cam)

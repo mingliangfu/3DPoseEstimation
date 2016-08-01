@@ -31,6 +31,25 @@ Mat showRGBDPatch(const Mat &patch, bool show /*= true*/)
 }
 
 
+Mat showTriplet(const Mat &p0,const Mat &p1,const Mat &p2,const Mat &p3,const Mat &p4, bool show /*= true*/)
+{
+    vector<Mat> ps;
+
+   ps.push_back(showRGBDPatch(p0,false));
+   ps.push_back(showRGBDPatch(p1,false));
+   ps.push_back(showRGBDPatch(p2,false));
+   ps.push_back(showRGBDPatch(p3,false));
+   ps.push_back(showRGBDPatch(p4,false));
+
+   Mat out(ps.back().rows*5,ps.back().cols,CV_32FC3);
+   for (int i=0; i < 5; ++i)
+       ps[i].copyTo(out(Rect(0,ps.back().rows*i,ps.back().cols,ps.back().rows)));
+
+    if (show){imshow("Patch ", out); waitKey();}
+    return out;
+}
+
+
 void depth2normals(const Mat &dep, Mat &nor,float fx, float fy, float ox, float oy)
 {
     auto accum = [] (float delta,float i,float j,float *A,float *b)
