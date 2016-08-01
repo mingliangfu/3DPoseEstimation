@@ -27,7 +27,7 @@ void networkSolver::buildBatchQueue(size_t batch_size, size_t triplet_size, size
 
         // Fill the batch
         batch.clear();
-        batch = buildBatch(batch_size, triplet_size, current_iter, false);
+        batch = buildBatch(batch_size, triplet_size, current_iter);
 
         // Fill linear batch memory with input data in Caffe layout with channel-first and set as network input
         for (size_t i = 0; i < batch.size(); ++i)
@@ -49,7 +49,7 @@ void networkSolver::buildBatchQueue(size_t batch_size, size_t triplet_size, size
     }
 }
 
-vector<Sample> networkSolver::buildBatch(int batch_size, unsigned int triplet_size, int iter, bool bootstrapping)
+vector<Sample> networkSolver::buildBatch(int batch_size, unsigned int triplet_size, int iter)
 {
     vector<Sample> batch;
     size_t puller = 0, pusher0 = 0, pusher1 = 0, pusher2 = 0;
@@ -183,7 +183,7 @@ void networkSolver::trainNet(int resume_iter, bool threaded)
     solver_param.set_display(1);
     solver_param.set_net(network_path + net_name + ".prototxt");
     caffe::SGDSolver<float> solver(solver_param);
-    bool bootstrapping = false;
+    bootstrapping = false;
 
     // Store the test network
     caffe::Net<float> testCNN(network_path + net_name + ".prototxt", caffe::TEST);
@@ -191,7 +191,8 @@ void networkSolver::trainNet(int resume_iter, bool threaded)
     if (resume_iter > 0) {
         string resume_file = net_name + "_iter_" + to_string(resume_iter) + ".solverstate";
         solver.Restore(resume_file.c_str());
-        bootstrapping = computeKNN(testCNN);
+        computeKNN(testCNN);
+        bootstrapping = true;
     }
 
     // Get network information
@@ -240,7 +241,7 @@ void networkSolver::trainNet(int resume_iter, bool threaded)
                 }
                 else
                 {
-                    vector<Sample> batch = buildBatch(batch_size, triplet_size, iter, bootstrapping);
+                    vector<Sample> batch = buildBatch(batch_size, triplet_size, iter);
 
                     // Fill linear batch memory with input data in Caffe layout with channel-first and set as network input
                     for (size_t i=0; i < batch.size(); ++i)
@@ -260,6 +261,7 @@ void networkSolver::trainNet(int resume_iter, bool threaded)
         }
 
         // Do bootstraping
+        bootstrapping = true;
         int snapshot_iter = epoch_iter * num_epochs * (training_round + 1) + resume_iter;
         testCNN.ShareTrainedLayersWith(&(*net));
 
@@ -332,7 +334,7 @@ void networkSolver::binarizeNet(int resume_iter)
         for (size_t iter = 0; iter < epoch_iter; iter++)
         {
             // Fill current batch
-            batch = buildBatch(batch_size, iter, false, triplet_size);
+            batch = buildBatch(batch_size, iter, triplet_size);
 
             // Fill linear batch memory with input data in Caffe layout with channel-first and set as network input
             for (size_t i=0; i < batch.size(); ++i)
@@ -353,7 +355,7 @@ void networkSolver::binarizeNet(int resume_iter)
 }
 
 
-bool networkSolver::computeKNN(caffe::Net<float> &CNN)
+void networkSolver::computeKNN(caffe::Net<float> &CNN)
 {
     // Get the training data
     Mat DBfeats, DBtraining;
@@ -402,7 +404,6 @@ bool networkSolver::computeKNN(caffe::Net<float> &CNN)
             }
         }
     }
-    return true;
 }
 
 void networkSolver::readParam(string config)

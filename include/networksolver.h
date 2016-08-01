@@ -41,11 +41,11 @@ public:
 
     void buildBatchQueue(size_t batch_size, size_t triplet_size, size_t epoch_iter,
                          size_t slice, size_t channels, size_t target_size, std::queue<vector<float>> &batch_queue);
-    vector<Sample> buildBatch(int batch_size, unsigned int triplet_size, int iter, bool bootstrapping);
+    vector<Sample> buildBatch(int batch_size, unsigned int triplet_size, int iter);
     void trainNet(int resume_iter=0, bool threaded=true);
     void binarizeNet(int resume_iter=0);
 
-    bool computeKNN(caffe::Net<float> &CNN);
+    void computeKNN(caffe::Net<float> &CNN);
     bool bootstrap(caffe::Net<float> &CNN, int iter);
 
     hdf5Handler h5;
@@ -66,6 +66,7 @@ public:
     const vector<vector<vector<int>>>& maxSimTmpl;
 
     // Config parameters
+    bool bootstrapping;
     vector<string> used_models, models;
     unsigned int num_epochs, num_training_rounds, binarization_epochs;
     unsigned int step_size;
