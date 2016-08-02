@@ -539,7 +539,7 @@ void datasetManager::generateAndStoreSamples(int sampling_type)
 void datasetManager::generateDatasets()
 {
     // Generate the hdf5 files if missing
-    generateAndStoreSamples(0);
+    generateAndStoreSamples(inplane);
 
     // Clear the sets
     training_set.clear();
@@ -547,8 +547,8 @@ void datasetManager::generateDatasets()
     test_set.clear();
 
     // Load backgrounds for further use
-    if (random_background == 3)
-        backgrounds = loadBackgrounds(bg_path);
+    //if (random_background == 3)
+    backgrounds = loadBackgrounds(bg_path);
 
 
     for (string &seq : used_models)
@@ -597,6 +597,10 @@ void datasetManager::generateDatasets()
         // Update the training set
         training_set.push_back(train_synth);
     }
+
+    // For LineMOD, load the hard negatives
+    if (dataset_name == "LineMOD")
+            loadLinemodHardNegatives();
 
     // Crop and shuffle the sets
     unsigned int min_training = numeric_limits<int>::max(), min_test = numeric_limits<int>::max();
@@ -717,6 +721,12 @@ void datasetManager::computeMaxSimTmpl()
 
 void datasetManager::randomFill(Mat &patch, int type)
 {
+    if (type==-1)
+    {
+        std::uniform_int_distribution<int> lol(1,3);
+        type = lol(ran);
+    }
+
     switch(type) {
         case 1: randomColorFill(patch); break;
         case 2: randomShapeFill(patch); break;
@@ -728,16 +738,25 @@ void datasetManager::randomColorFill(Mat &patch)
 {
     int chans = patch.channels();
     std::uniform_real_distribution<float> p(0.f,1.f);
+
+    vector<Mat> channels;
+    cv::split(patch,channels);
+
+    // Store the mask (dilated to kill render borders)
+    Mat mask = (channels[3] == 0);
+    cv::dilate(mask,mask,Mat());
+
     for (int r=0; r < patch.rows; ++r)
     {
         float *row = patch.ptr<float>(r);
         for (int c=0; c < patch.cols; ++c)
         {
-            if (row[c*chans + 3] > 0) continue;
-            for (int ch = 0; ch < 7; ++ch)
-                row[c*chans + ch] =  p(ran);
+            if (mask.at<uchar>(r,c))
+                for (int ch = 0; ch < 7; ++ch)
+                    row[c*chans + ch] =  p(ran);
         }
     }
+
 }
 
 void datasetManager::randomShapeFill(Mat &patch)
@@ -772,8 +791,9 @@ void datasetManager::randomShapeFill(Mat &patch)
     // medianBlur(tmp_rgb, tmp_rgb, 5);
     GaussianBlur(tmp_rgb, tmp_rgb, Size(5,5), 0, 0);
 
-    // Store the mask
+    // Store the mask (dilated to kill render borders)
     Mat mask = patch_dep == 0;
+    cv::dilate(mask,mask,Mat());
 
     // Copy random shapes to the background of the patch
     tmp_rgb.copyTo(patch_rgb,mask);
@@ -786,6 +806,8 @@ void datasetManager::randomShapeFill(Mat &patch)
 
 void datasetManager::randomRealFill(Mat &patch)
 {
+    if (backgrounds.empty()) throw runtime_error("No backgrounds loaded!");
+
     Size patch_size(patch.size().width,patch.size().height);
     Size bg_size(backgrounds[0].color.size().width, backgrounds[0].color.size().height);
     Mat tmp_rgb, tmp_dep, tmp_nor;
@@ -820,8 +842,9 @@ void datasetManager::randomRealFill(Mat &patch)
     backgrounds[bg].depth(Rect(tl_x, tl_y, patch_size.width, patch_size.height)).copyTo(tmp_dep);
     backgrounds[bg].normals(Rect(tl_x, tl_y, patch_size.width, patch_size.height)).copyTo(tmp_nor);
 
-    // Store the mask
+    // Store the mask (dilated to kill render borders)
     Mat mask = patch_dep == 0;
+    cv::dilate(mask,mask,Mat());
 
     // Adjust depth
     float depth_scale = 0.45 / backgrounds[bg].depth.at<float>(center_x, center_y);
@@ -833,8 +856,8 @@ void datasetManager::randomRealFill(Mat &patch)
     tmp_dep.copyTo(patch_dep,mask);
     tmp_nor.copyTo(patch_nor,mask);
 
-    medianBlur(patch_rgb, patch_rgb, 3);
-    medianBlur(patch_nor, patch_nor, 3);
+    //medianBlur(patch_rgb, patch_rgb, 3);
+    //medianBlur(patch_nor, patch_nor, 3);
 
     cv::merge(vector<Mat>{patch_rgb,patch_dep,patch_nor},patch);
     // showRGBDPatch(patch, true);

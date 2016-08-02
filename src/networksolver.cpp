@@ -57,6 +57,8 @@ vector<Sample> networkSolver::buildBatch(int batch_size, unsigned int triplet_si
     // Random generator for object selection and template selection
     std::uniform_int_distribution<size_t> ran_obj(0, nr_objects-1), ran_tpl(0, nr_template_poses-1);
 
+    unordered_map<string, vector<Sample> > hard_negs = db->getHardNegatives();
+
     for (size_t linearId = iter * batch_size/triplet_size; linearId < (iter * batch_size/triplet_size) + batch_size/triplet_size; ++linearId) {
 
         Triplet triplet;
@@ -74,6 +76,15 @@ vector<Sample> networkSolver::buildBatch(int batch_size, unsigned int triplet_si
         // Pusher 0: second most similar template
         pusher0 = maxSimTmpl[object][training_pose][1];
         triplet.pusher0.copySample(template_set[object][pusher0]);
+
+        // OR:
+        // If we have hard negatives for this model, put it
+        if (hard_negs.find(used_models[object]) != hard_negs.end())
+        {
+            vector<Sample> &negs = hard_negs[used_models[object]];
+            std::uniform_int_distribution<size_t> ran_neg(0, negs.size()-1);
+            triplet.pusher0.copySample(negs[ran_neg(ran)]);
+        }
 
         if (bootstrapping)
         {
@@ -110,10 +121,11 @@ vector<Sample> networkSolver::buildBatch(int batch_size, unsigned int triplet_si
                 knn_pose = maxSimKNNTmpl[object][training_pose][3];
                 triplet.pusher2.copySample(template_set[knn_object][knn_pose]);
             } else {
-                // - template from another object
-                pusher2 = ran_obj(ran);
-                while (pusher2 == object) pusher2 = ran_obj(ran);
-                triplet.pusher2.copySample(template_set[pusher2][ran_tpl(ran)]);
+
+                    // - template from another object
+                    pusher2 = ran_obj(ran);
+                    while (pusher2 == object) pusher2 = ran_obj(ran);
+                    triplet.pusher2.copySample(template_set[pusher2][ran_tpl(ran)]);
             }
         } else {
             // Pusher 1: random template of the same class
@@ -182,6 +194,14 @@ void networkSolver::trainNet(int resume_iter, bool threaded)
     solver_param.set_snapshot_prefix(net_name);
     solver_param.set_display(1);
     solver_param.set_net(network_path + net_name + ".prototxt");
+
+
+    if (binarization){
+        cerr << "Binarization!!" << endl;
+        solver_param.set_snapshot_prefix(binarization_net_name);
+        solver_param.set_net(network_path + binarization_net_name + ".prototxt");
+    }
+
     caffe::SGDSolver<float> solver(solver_param);
     bootstrapping = false;
 
@@ -206,16 +226,15 @@ void networkSolver::trainNet(int resume_iter, bool threaded)
 
     unsigned int triplet_size = 5;
     unsigned int epoch_iter = nr_objects * nr_training_poses / (batch_size/triplet_size);
-
-
     vector<float> batch_caffe(batch_size * slice*channels,0);
     queue<vector<float>> batch_queue;
-    vector<std::thread> threads(std::thread::hardware_concurrency()/2); // - number of threads supported/2
+    vector<std::thread> threads;
 
     if (threaded)
     {
         // Start threaded batch builders
         thread_iter = 0;
+        threads.resize(std::thread::hardware_concurrency()/2);  // - number of threads supported/2
         for(std::thread &t : threads)
             t = std::thread(&networkSolver::buildBatchQueue, this, batch_size, triplet_size, epoch_iter,
                             slice, channels, target_size, std::ref(batch_queue));
@@ -243,6 +262,9 @@ void networkSolver::trainNet(int resume_iter, bool threaded)
                 {
                     vector<Sample> batch = buildBatch(batch_size, triplet_size, iter);
 
+                    if (bootstrapping)
+                        imwrite("triplet.png",255*showTriplet(batch[0].data,batch[1].data,batch[2].data,batch[3].data,batch[4].data));
+
                     // Fill linear batch memory with input data in Caffe layout with channel-first and set as network input
                     for (size_t i=0; i < batch.size(); ++i)
                     {
@@ -255,13 +277,13 @@ void networkSolver::trainNet(int resume_iter, bool threaded)
                     }
                 }
 
+
                 input_data_layer->set_cpu_data(batch_caffe.data());
                 solver.Step(1);
             }
         }
 
         // Do bootstraping
-        bootstrapping = true;
         int snapshot_iter = epoch_iter * num_epochs * (training_round + 1) + resume_iter;
         testCNN.ShareTrainedLayersWith(&(*net));
 
@@ -278,17 +300,17 @@ void networkSolver::trainNet(int resume_iter, bool threaded)
         } else {
             eval::computeHistogram(testCNN, template_set, training_set, test_set, rotInv, config, snapshot_iter);
         }
-        // bootstrapping = computeKNN(testCNN);
+
+        computeKNN(testCNN);
+        bootstrapping = true;
+
     }
     solver.Snapshot();
     clog << "Training finished!" << endl;
 
-    if (threaded)
-    {
-        // Detach all threads
-        for(std::thread &t : threads)
-            t.detach();
-    }
+    // Detach all threads
+    for(std::thread &t : threads)
+        t.detach();
 
 }
 
@@ -323,6 +345,8 @@ void networkSolver::binarizeNet(int resume_iter)
     const int slice = input_data_layer->height()*input_data_layer->width();
     const int img_size = slice*channels;
     vector<float> data(batch_size*img_size,0);
+
+
 
     vector<Sample> batch;
     unsigned int triplet_size = 5;
