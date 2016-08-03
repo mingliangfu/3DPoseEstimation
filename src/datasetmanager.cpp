@@ -501,7 +501,7 @@ void datasetManager::generateAndStoreSamples(int sampling_type)
 
         if (fexists(dataset_path + model_name + ".ply")) {type = 1; ext = ".ply";}
         else if (fexists(dataset_path + model_name + ".obj")) {type = 2; ext = ".obj";}
-        else {throw runtime_error("No model found for " + model_name +"!");}
+        else {throw runtime_error("No model found for " + model_name + "!");}
         model.loadModel(dataset_path + model_name + ext, type);
 
         // - load frames of benchmark and visualize

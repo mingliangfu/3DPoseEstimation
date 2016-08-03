@@ -138,10 +138,13 @@ void SingletonPainter::bindVBOs(vector<Vector3f> &vertex,vector<Vector3i> &faces
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
     glBindTexture(GL_TEXTURE_2D, tex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,     GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,     GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+
+    glPixelStorei(GL_UNPACK_ALIGNMENT, (texture.step & 3) ? 1 : 4);
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, texture.step/texture.elemSize());
 
     glTexImage2D(GL_TEXTURE_2D,     // Type of texture
                    0,                 // Pyramid level (for mip-mapping) - 0 is the top level
@@ -152,6 +155,8 @@ void SingletonPainter::bindVBOs(vector<Vector3f> &vertex,vector<Vector3i> &faces
                    GL_BGR,            // Input image format (i.e. GL_RGB, GL_RGBA, GL_BGR etc.)
                    GL_UNSIGNED_BYTE,  // Image data type
                    texture.ptr());        // The actual image data itself
+
+    glGenerateMipmap(GL_TEXTURE_2D);
     glEnable(GL_TEXTURE_2D);
 
     //doneCurrent();
