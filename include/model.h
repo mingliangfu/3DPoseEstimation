@@ -2,6 +2,9 @@
 
 #include <Eigen/Core>
 #include <opencv2/core.hpp>
+#include <opencv2/core/core.hpp>
+#include <opencv2/highgui/highgui.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
 #include "painter.h"
 
 using namespace cv;
@@ -43,7 +46,7 @@ public:
     vector<Vector3i> &getFaces() {return m_faces;}
 
     float getCubeSize() {return m_cube_size;}
-    bool loadPLY(string filename);
+    bool loadModel(string filename, int type = 1); // 1 - PLY, 2 - OBJ
     void savePLY(string filename);
 
     Vector3f bb_min,bb_max, centroid;
@@ -51,12 +54,13 @@ public:
 
     // The data of the model
     vector<Vector3f> m_normals, m_colors, m_points, m_localCoordColors;
+    vector<Vector2f> m_tcoords;
     vector<Vector3i> m_faces;
+    Mat m_tex;
 
     // Subsampled cloud for intermediate computations
     vector<Vector3f> m_subpoints, m_subnormals;
     vector<Vec3b> m_subcolors;
-
     
 private:
 
@@ -67,7 +71,7 @@ private:
     float m_diameter;
 
     // OpenGL specifics for fast rendering
-    GLuint m_vbo_vertices, m_vbo_indices;
+    GLuint m_vbo_vertices, m_vbo_indices, m_vbo_tcoords, m_vbo_tex;
     vector<Vector3f> m_vertex;
 
 }; 

@@ -90,6 +90,7 @@ void SingletonPainter::paintGL()
     m_fbo->bind();
 
     glViewport(0,0,m_width,m_height);
+//    clearBackground(1.0f,0.0f,0.0f);
     glClearColor(m_background[0],m_background[1],m_background[2],1.0f);
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
     glDisable(GL_BLEND);
@@ -117,11 +118,12 @@ void SingletonPainter::clearBackground(float r,float g,float b)
     m_background << r,g,b;
 }
 /*********************************************************************************/
-void SingletonPainter::bindVBOs(vector<Vector3f> &vertex,vector<Vector3i> &faces, GLuint &vert, GLuint &ind)
+void SingletonPainter::bindVBOs(vector<Vector3f> &vertex,vector<Vector3i> &faces, vector<Vector2f> &tcoords, Mat &texture, GLuint &vert, GLuint &ind, GLuint &tcoord, GLuint &tex)
 {
    // makeCurrent();
     glGenBuffers(1, &vert);
     glGenBuffers(1, &ind);
+    glGenBuffers(1, &tcoord);
 
     glBindBuffer(GL_ARRAY_BUFFER, vert);
     glBufferData(GL_ARRAY_BUFFER, sizeof(Vector3f)*vertex.size(),vertex.data(),GL_STATIC_DRAW);
@@ -130,15 +132,43 @@ void SingletonPainter::bindVBOs(vector<Vector3f> &vertex,vector<Vector3i> &faces
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ind);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(Vector3i)*faces.size(),faces.data(),GL_STATIC_DRAW);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
+    glBindBuffer(GL_ARRAY_BUFFER, tcoord);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(Vector2f)*tcoords.size(),tcoords.data(),GL_STATIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,     GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,     GL_CLAMP_TO_EDGE);
+
+    glTexImage2D(GL_TEXTURE_2D,     // Type of texture
+                   0,                 // Pyramid level (for mip-mapping) - 0 is the top level
+                   GL_RGB,            // Internal colour format to convert to
+                   texture.cols,      // Image width  i.e. 640 for Kinect in standard mode
+                   texture.rows,      // Image height i.e. 480 for Kinect in standard mode
+                   0,                 // Border width in pixels (can either be 1 or 0)
+                   GL_BGR,            // Input image format (i.e. GL_RGB, GL_RGBA, GL_BGR etc.)
+                   GL_UNSIGNED_BYTE,  // Image data type
+                   texture.ptr());        // The actual image data itself
+    glEnable(GL_TEXTURE_2D);
+
     //doneCurrent();
 }
 /*********************************************************************************/
 
-void SingletonPainter::drawVBOs(GLuint vert, GLuint ind, int count)
+void SingletonPainter::drawVBOs(GLuint vert, GLuint ind, GLuint tcoord, GLuint tex, int count)
 {
     glBindBuffer(GL_ARRAY_BUFFER, vert);
     glVertexPointer(3,GL_FLOAT,2*sizeof(Vector3f),0);
-    glColorPointer (3,GL_FLOAT,2*sizeof(Vector3f),reinterpret_cast<void*>(sizeof(Vector3f)));
+    glColorPointer(3,GL_FLOAT,2*sizeof(Vector3f),reinterpret_cast<void*>(sizeof(Vector3f)));
+
+    glBindBuffer(GL_ARRAY_BUFFER, tcoord);
+
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexCoordPointer(2,GL_FLOAT,0,0);
+
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ind);
     if (ind==0) glDrawArrays(GL_POINTS,0,count);
     else        glDrawElements(GL_TRIANGLES,count,GL_UNSIGNED_INT,0);

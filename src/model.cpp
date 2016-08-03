@@ -35,17 +35,21 @@ void Model::paint()
     {
         glEnableClientState(GL_VERTEX_ARRAY);
         glEnableClientState(GL_COLOR_ARRAY);
+        glEnableClientState(GL_TEXTURE_COORD_ARRAY);
 #ifdef USE_VBO
-        if (!m_faces.empty()) Painter::getSingleton()->drawVBOs(m_vbo_vertices,m_vbo_indices,m_faces.size()*3);
-        else Painter::getSingleton()->drawVBOs(m_vbo_vertices,0,m_points.size());
+        if (!m_faces.empty()) Painter::getSingleton()->drawVBOs(m_vbo_vertices,m_vbo_indices,m_vbo_tcoords,m_vbo_tex,m_faces.size()*3);
+        else Painter::getSingleton()->drawVBOs(m_vbo_vertices,0,m_vbo_tcoords,m_vbo_tex,m_points.size());
 #else
         glVertexPointer(3,GL_FLOAT,2*sizeof(Vector3f),&(vertex_data[0]));
         glColorPointer (3,GL_FLOAT,2*sizeof(Vector3f),&(vertex_data[1]));
+        // glTexCoordPointer(2,GL_FLOAT,0,0);
+
         if(!faces.empty()) glDrawElements(GL_TRIANGLES,faces.size()*3,GL_UNSIGNED_INT,faces.data());
         else glDrawArrays(GL_POINTS,0,points.size());
 #endif
         glDisableClientState(GL_COLOR_ARRAY);
         glDisableClientState(GL_VERTEX_ARRAY);
+        glDisableClientState(GL_TEXTURE_COORD_ARRAY);
     }
 }
 
@@ -62,7 +66,7 @@ void Model::bindVBOs()
         //m_vertex_data[i*2+1] = m_localCoordColors[i];
     }
 #ifdef USE_VBO  // Bind VBO data onto GPU
-    Painter::getSingleton()->bindVBOs(m_vertex,m_faces,m_vbo_vertices,m_vbo_indices);
+    Painter::getSingleton()->bindVBOs(m_vertex,m_faces,m_tcoords,m_tex,m_vbo_vertices,m_vbo_indices,m_vbo_tcoords,m_vbo_tex);
 #endif
 }
 
@@ -288,7 +292,7 @@ void Model::savePLY(string filename)
 
 /***************************************************************************/
 
-bool Model::loadPLY(string filename)
+bool Model::loadModel(string filename, int type /*= 1*/)
 {
 
     if (!boost::filesystem::exists(filename))
@@ -297,8 +301,7 @@ bool Model::loadPLY(string filename)
         return false;
     }
 
-
-    cv::viz::Mesh mesh = cv::viz::Mesh::load(filename);
+    cv::viz::Mesh mesh = cv::viz::Mesh::load(filename, type);
 
     m_points.resize(mesh.cloud.cols);
     for (int i=0; i < mesh.cloud.cols; ++i)
@@ -316,12 +319,32 @@ bool Model::loadPLY(string filename)
     if (mesh.colors.empty())
     {
         cerr << "Model - no colors in file" << endl;
-        m_colors.assign(m_faces.size(),Vector3f(127,127,127));
+        m_colors.assign(m_points.size(),Vector3f(127,127,127));
     }
     else for (int i=0; i < mesh.colors.cols; ++i)
     {
         Vec3b &col = mesh.colors.at<Vec3b>(0,i);
         m_colors.push_back(Vector3f(col[0],col[1],col[2]));
+    }
+
+    m_tcoords.clear();
+    if (mesh.tcoords.empty())
+    {
+        cerr << "Model - no texture in file" << endl;
+    }
+    else
+    {
+        for (int i=0; i < mesh.tcoords.cols; ++i) {
+            Vector2f &tc = mesh.tcoords.at<Vector2f>(0,i);
+            m_tcoords.push_back(Vector2f(tc[0],tc[1]));
+        }
+
+        // Load texture
+        string texturename = filename.substr(0, filename.size()-4) + ".png";
+        m_tex = imread(texturename);
+        flip(m_tex, m_tex, 0);
+        // imshow("Boah", m_tex); waitKey();
+
     }
 
     assert(!m_points.empty());

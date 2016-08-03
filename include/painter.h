@@ -55,8 +55,8 @@ public:
     void paint(int x=0,int y=0,int w=0,int h=0);
     void paint(Rect &rect);
 
-    void bindVBOs(vector<Vector3f> &vertex,vector<Vector3i> &faces, GLuint &vert, GLuint &ind);
-    void drawVBOs(GLuint vert, GLuint ind, int count);
+    void bindVBOs(vector<Vector3f> &vertex, vector<Vector3i> &faces, vector<Vector2f> &tcoords, Mat &texture, GLuint &vert, GLuint &ind, GLuint &tcoord, GLuint &tex);
+    void drawVBOs(GLuint vert, GLuint ind, GLuint tcoord, GLuint tex, int count);
 
     inline void copyColorTo(Mat &dest){m_color(copy_rect).copyTo(dest);}
     inline void copyDepthTo(Mat &dest){m_depth(copy_rect).copyTo(dest);}

@@ -419,6 +419,7 @@ vector<Sample> datasetManager::createSynthSamplesPaul(Model &model, Matrix3f &ca
 
         // Render the view
         renderer.renderView(model,pose,color,depth,false);
+        // imshow("Model", color); waitKey();
 
         // Compute normals
         depth2normals(depth,normals,cam);
@@ -496,8 +497,12 @@ void datasetManager::generateAndStoreSamples(int sampling_type)
         clog << "\nCreating samples and patches for " << model_name << ":" << endl;
 
         // - load model
-        Model model;
-        model.loadPLY(dataset_path + model_name + ".ply");
+        Model model; int type; string ext;
+
+        if (fexists(dataset_path + model_name + ".ply")) {type = 1; ext = ".ply";}
+        else if (fexists(dataset_path + model_name + ".obj")) {type = 2; ext = ".obj";}
+        else {throw runtime_error("No model found for " + model_name +"!");}
+        model.loadModel(dataset_path + model_name + ext, type);
 
         // - load frames of benchmark and visualize
         Benchmark bench;
@@ -547,9 +552,8 @@ void datasetManager::generateDatasets()
     test_set.clear();
 
     // Load backgrounds for further use
-    //if (random_background == 3)
+    if (random_background == 3 || random_background == -1)
     backgrounds = loadBackgrounds(bg_path);
-
 
     for (string &seq : used_models)
     {
