@@ -553,7 +553,7 @@ void datasetManager::generateDatasets()
 
     // Load backgrounds for further use
     if (random_background == 3 || random_background == -1)
-    backgrounds = loadBackgrounds(bg_path);
+        backgrounds = loadBackgrounds(bg_path);
 
     for (string &seq : used_models)
     {
@@ -775,33 +775,62 @@ void datasetManager::randomShapeFill(Mat &patch)
     cv::merge(vector<Mat>({channels[3]}),patch_dep);
     cv::merge(vector<Mat>({channels[4],channels[5],channels[6]}),patch_nor);
 
-    std::uniform_real_distribution<float> color(0.4f,0.8f);
-    std::uniform_int_distribution<int> coord(0,64);
-    std::uniform_int_distribution<int> r(0,40);
-
+    float scale_size = 1.2;
     // Store a copy and fill it with random shapes
-    Mat tmp_rgb = Mat::zeros(patch_size.width, patch_size.height, CV_32FC3);
-    Mat tmp_dep = Mat::zeros(patch_size.width, patch_size.height, CV_32F);
-    for (int i = 0; i < 10; i++)
-    {
-      Point center;
+    Mat tmp_rgb = Mat::zeros(patch_size.width*scale_size, patch_size.height*scale_size, CV_32FC3);
+    Mat tmp_dep = Mat::zeros(patch_size.width*scale_size, patch_size.height*scale_size, CV_32F);
+    Mat tmp_nor = Mat::zeros(patch_size.width*scale_size, patch_size.height*scale_size, CV_32FC3);
+    Point center;
+
+    std::uniform_real_distribution<float> color(0.35f,0.7f);
+    std::uniform_real_distribution<float> s(0.0f,0.2f);
+    std::uniform_int_distribution<int> r(0,20);
+    std::vector<float> i{0, tmp_rgb.size().width/2-10.f, tmp_rgb.size().width/2+10.f, (float)tmp_rgb.size().width}; std::vector<float> w{1, 0, 0, 1};
+    std::piecewise_linear_distribution<> coord(i.begin(), i.end(), w.begin());
+    // std::uniform_int_distribution<int> coord(0,64);
+
+    // Fill base surface
+    float scale = s(ran);
+    rectangle(tmp_rgb, Point(0,0), Point(tmp_rgb.cols, tmp_rgb.rows), Scalar(color(ran),color(ran),color(ran)), -1, 8);
+    for (int y = 0; y < tmp_dep.size().height; ++y) {
+        for (int x = 0; x < tmp_dep.size().width; ++x) {
+             tmp_dep.at<float>(x,y) = 0.5 + scale * (float)x/(tmp_dep.size().width);
+         }
+     }
+
+    // Fill circles
+    for (int i = 0; i < 20; i++) {
       center.x = coord(ran);
       center.y = coord(ran);
       int rad = r(ran);
       circle(tmp_rgb, center, rad, Scalar(color(ran),color(ran),color(ran)), -1, 8);
       circle(tmp_dep, center, rad, Scalar(color(ran)), -1, 8);
-
     }
+
+    // Adjust depth
+    float depth_scale = 0.6 / tmp_dep.at<float>(tmp_dep.size().width/2, tmp_dep.size().height/2);
+    tmp_dep *= depth_scale;
+    tmp_dep.setTo(1, tmp_dep > 1);
+
+    // Add noise
+    Mat tmp_noise = tmp_dep.clone();
+    randn(tmp_noise, 0.0f, 0.002f);
+    tmp_dep += tmp_noise;
+
+    depth2normals(tmp_dep, tmp_nor, 539, 539, 0, 0);
+
     // medianBlur(tmp_rgb, tmp_rgb, 5);
-    GaussianBlur(tmp_rgb, tmp_rgb, Size(5,5), 0, 0);
+    // GaussianBlur(tmp_rgb, tmp_rgb, Size(5,5), 0, 0);
 
     // Store the mask (dilated to kill render borders)
     Mat mask = patch_dep == 0;
     cv::dilate(mask,mask,Mat());
 
     // Copy random shapes to the background of the patch
-    tmp_rgb.copyTo(patch_rgb,mask);
-    tmp_dep.copyTo(patch_dep,mask);
+    tmp_rgb(Rect((tmp_rgb.cols - patch_size.width)/2, (tmp_rgb.rows - patch_size.width)/2, patch_size.width, patch_size.height)).copyTo(patch_rgb,mask);
+    tmp_dep(Rect((tmp_dep.cols - patch_size.width)/2, (tmp_dep.cols - patch_size.width)/2, patch_size.width, patch_size.height)).copyTo(patch_dep,mask);
+    tmp_nor(Rect((tmp_nor.cols - patch_size.width)/2, (tmp_nor.cols - patch_size.width)/2, patch_size.width, patch_size.height)).copyTo(patch_nor,mask);
+    // cout << patch_dep << endl;
 
     cv::merge(vector<Mat>{patch_rgb,patch_dep,patch_nor},patch);
     // showRGBDPatch(patch, true);
@@ -851,8 +880,9 @@ void datasetManager::randomRealFill(Mat &patch)
     cv::dilate(mask,mask,Mat());
 
     // Adjust depth
-    float depth_scale = 0.45 / backgrounds[bg].depth.at<float>(center_x, center_y);
+    float depth_scale = 0.6 / backgrounds[bg].depth.at<float>(center_x, center_y);
     tmp_dep *= depth_scale;
+    tmp_dep.setTo(1, tmp_dep > 1);
 
     // Fill backgrounds
     tmp_rgb.convertTo(tmp_rgb, CV_32FC3, 1/255.f);
@@ -888,7 +918,7 @@ datasetManager::datasetManager(string config)
     if ((dataset_name != "LineMOD") &&
         (dataset_name != "BigBIRD") &&
         (dataset_name != "Washington"))
-        throw runtime_error("Unknown dataset: " + dataset_name +"!");
+        throw runtime_error("Unknown dataset: " + dataset_name + "!");
 
     // For each object build a mapping from model name to index number
     for (size_t i = 0; i < models.size(); ++i) model_index[models[i]] = i;
