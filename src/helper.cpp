@@ -102,4 +102,41 @@ void depth2normals(const Mat &dep, Mat &nor,float fx, float fy, float ox, float 
     }
 }
 
+Mat growForeground(Mat &depth)
+{
+    auto check = [](float ref, float other)->bool
+    {
+        return abs(ref-other)<0.01f;
+    };
+
+    Mat mask = Mat::zeros(depth.size(),CV_8U);
+
+    stack<Point> cands;
+    cands.push(Point(depth.cols/2,depth.rows/2));
+//    cands.push(Point(0,0));
+
+    while (!cands.empty())
+    {
+        Point p = cands.top();
+        cands.pop();
+        mask.at<uchar>(p) = 255;   // Mark visited
+
+        float d = depth.at<float>(p);
+        if ((p.x>0) && (!mask.at<uchar>(p.y,p.x-1)))
+            if (check(d,depth.at<float>(p.y,p.x-1))) cands.push(Point(p.x-1,p.y));
+        if ((p.y>0) && (!mask.at<uchar>(p.y-1,p.x)))
+            if (check(d,depth.at<float>(p.y-1,p.x))) cands.push(Point(p.x,p.y-1));
+
+        if ((p.x<depth.cols-1) && (!mask.at<uchar>(p.y,p.x+1)))
+            if (check(d,depth.at<float>(p.y,p.x+1))) cands.push(Point(p.x+1,p.y));
+        if ((p.y<depth.rows-1) && (!mask.at<uchar>(p.y+1,p.x)))
+            if (check(d,depth.at<float>(p.y+1,p.x))) cands.push(Point(p.x,p.y+1));
+
+    }
+
+    imshow("depth",depth);imshow("mask",mask); waitKey();
+    return mask;
+
+}
+
 }

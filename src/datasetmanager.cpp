@@ -112,6 +112,46 @@ Benchmark datasetManager::loadBigbirdBenchmark(string bigbird_path, string seque
     return bench;
 }
 
+Benchmark datasetManager::loadWashingtonBenchmark(string washington_path, string sequence, int count /*=-1*/)
+{
+    string dir_string = washington_path + sequence;
+    cerr << "  - loading benchmark " << dir_string << endl;
+    Benchmark bench;
+
+    ifstream pose(dir_string + "/poses.txt");
+    assert(pose.is_open());
+
+    int num;
+    while(pose >> num)
+    {
+        Frame frame;
+        frame.nr = num;
+        stringstream filenum;
+        filenum << setw(6) << setfill('0') << num;
+        frame.color = imread(dir_string + "/color_" + filenum.str() + ".png");
+        frame.depth = imread(dir_string + "/depth_" + filenum.str() + ".png",-1);
+        assert(!frame.color.empty() && !frame.depth.empty());
+        frame.depth.convertTo(frame.depth,CV_32F,0.001f);   // Bring depth map into meters
+        frame.gt.push_back({sequence,Isometry3f::Identity()});
+
+        imshow("Color: ", frame.color); waitKey();
+
+        // Read pose
+        for (int k=0; k < 4;k++)
+            for(int l=0; l < 4;l++)
+                pose >> frame.gt[0].second.matrix()(k,l);
+        cout << frame.gt[0].second.matrix() << endl;
+        bench.frames.push_back(frame);
+    }
+
+    bench.cam = Matrix3f::Identity();
+    bench.cam(0,0) = 572.4114f;
+    bench.cam(0,2) = 325.2611f;
+    bench.cam(1,1) = 573.5704f;
+    bench.cam(1,2) = 242.0489f;
+    return bench;
+}
+
 Benchmark datasetManager::loadBenjaminBenchmark(string benjamin_path, string sequence, int index)
 {
     string dir_string = benjamin_path + sequence;
@@ -508,7 +548,7 @@ void datasetManager::generateAndStoreSamples(int sampling_type)
         Benchmark bench;
         if (dataset_name == "LineMOD") {bench = loadLinemodBenchmark(dataset_path, model_name);}
         else if (dataset_name == "BigBIRD") {bench = loadBigbirdBenchmark(dataset_path, model_name);}
-        else if (dataset_name == "Washington") {bench = loadLinemodBenchmark(dataset_path, model_name);}
+        else if (dataset_name == "Washington") {bench = loadWashingtonBenchmark(dataset_path, model_name);}
         else {bench = loadLinemodBenchmark(dataset_path, model_name);}
 
         // Real data

@@ -35,6 +35,7 @@ public:
     datasetManager(string config);
     Benchmark loadLinemodBenchmark(string linemod_path, string sequence, int count=-1);
     Benchmark loadBigbirdBenchmark(string bigbird_path, string sequence, int count=-1);
+    Benchmark loadWashingtonBenchmark(string washington_path, string sequence, int count=-1);
     Benchmark loadBenjaminBenchmark(string benjamin_path, string sequence, int index);
     Mat samplePatchWithScale(Mat &color, Mat &depth, Mat &normals, int center_x, int center_y, float z, float fx, float fy);
     vector<Sample> extractRealSamplesPaul(vector<Frame> &frames, Matrix3f &cam, int index, Model &model);

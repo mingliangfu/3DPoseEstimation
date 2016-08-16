@@ -40,9 +40,9 @@ void Model::paint()
         if (!m_faces.empty()) Painter::getSingleton()->drawVBOs(m_vbo_vertices,m_vbo_indices,m_vbo_tcoords,m_vbo_tex,m_faces.size()*3);
         else Painter::getSingleton()->drawVBOs(m_vbo_vertices,0,m_vbo_tcoords,m_vbo_tex,m_points.size());
 #else
-        glVertexPointer(3,GL_FLOAT,2*sizeof(Vector3f),&(vertex_data[0]));
-        glColorPointer (3,GL_FLOAT,2*sizeof(Vector3f),&(vertex_data[1]));
-        // glTexCoordPointer(2,GL_FLOAT,0,0);
+        glVertexPointer(3,GL_FLOAT,2*sizeof(Vector3f),&(m_vertex[0]));
+        glColorPointer (3,GL_FLOAT,2*sizeof(Vector3f),&(m_vertex[1]));
+        glTexCoordPointer(2,GL_FLOAT,0,0);
 
         if(!faces.empty()) glDrawElements(GL_TRIANGLES,faces.size()*3,GL_UNSIGNED_INT,faces.data());
         else glDrawArrays(GL_POINTS,0,points.size());
@@ -302,6 +302,7 @@ bool Model::loadModel(string filename, int type /*= 1*/)
     }
 
     cv::viz::Mesh mesh = cv::viz::Mesh::load(filename, type);
+    assert(!mesh.cloud.empty());
 
     m_points.resize(mesh.cloud.cols);
     for (int i=0; i < mesh.cloud.cols; ++i)
@@ -343,8 +344,10 @@ bool Model::loadModel(string filename, int type /*= 1*/)
         string texturename = filename.substr(0, filename.size()-4) + ".png";
         m_tex = imread(texturename);
         flip(m_tex, m_tex, 0);
-        // imshow("Boah", m_tex); waitKey();
-
+        // Resize the texture: 4272x2848 -> 640x480 = ~6 times
+        resize(m_tex, m_tex, m_tex.size()/6);
+        // Adjust the brigtness/contrast
+        m_tex.convertTo(m_tex,-1,1.8,20);
     }
 
     assert(!m_points.empty());
