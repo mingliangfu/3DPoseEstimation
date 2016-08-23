@@ -42,6 +42,7 @@ public:
     void buildBatchQueue(size_t batch_size, size_t triplet_size, size_t epoch_iter,
                          size_t slice, size_t channels, size_t target_size, std::queue<vector<float>> &batch_queue);
     vector<Sample> buildBatch(int batch_size, unsigned int triplet_size, int iter);
+    vector<Sample> buildBatchClass(int batch_size, unsigned int triplet_size, int iter);
     void trainNet(int resume_iter=0, bool threaded=true);
     void binarizeNet(int resume_iter=0);
 

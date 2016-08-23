@@ -167,13 +167,85 @@ vector<Sample> networkSolver::buildBatch(int batch_size, unsigned int triplet_si
         batch.push_back(triplet.pusher1);
         batch.push_back(triplet.pusher2);
 
-#if 0   // Show triplets
-        imshow("anchor",showRGBDPatch(batch[batch.size()-5].data,false));
-        imshow("puller",showRGBDPatch(batch[batch.size()-4].data,false));
-        imshow("pusher0",showRGBDPatch(batch[batch.size()-3].data,false));
-        imshow("pusher1",showRGBDPatch(batch[batch.size()-2].data,false));
-        imshow("pusher2",showRGBDPatch(batch.back().data,false));
-        waitKey();
+#if 1   // Show triplets
+        showTriplet(triplet.anchor.data,triplet.puller.data,triplet.pusher0.data,triplet.pusher1.data,triplet.pusher2.data);
+#endif
+
+    }
+    return batch;
+}
+
+vector<Sample> networkSolver::buildBatchClass(int batch_size, unsigned int triplet_size, int iter)
+{
+    vector<Sample> batch;
+    size_t puller = 0, pusher0 = 0, pusher1 = 0, pusher2 = 0;
+
+    // Random generator for object selection and template selection
+    std::uniform_int_distribution<size_t> ran_obj(0, nr_objects-1), ran_tpl(0, nr_template_poses-1);
+
+    for (size_t linearId = iter * batch_size/triplet_size; linearId < (iter * batch_size/triplet_size) + batch_size/triplet_size; ++linearId) {
+
+        Triplet triplet;
+
+        // Calculate 2d indices
+        unsigned int training_pose = linearId / nr_objects;
+        unsigned int object = linearId % nr_objects;
+
+        // Anchor: training set sample
+        triplet.anchor.copySample(training_set[object][training_pose]);
+
+        // Puller: random template
+        puller = ran_tpl(ran);
+        triplet.puller.copySample(template_set[object][puller]);
+
+        // Pusher 0: random template of a different class
+        pusher0 = ran_obj(ran);
+        while (pusher0 == object) pusher0 = ran_obj(ran);
+        triplet.pusher0.copySample(template_set[pusher0][ran_tpl(ran)]);
+
+        // Pusher 1: random template of a different class
+        pusher1 = ran_obj(ran);
+        while(pusher1 == object || pusher1 == pusher0) pusher1 = ran_obj(ran);
+        triplet.pusher1.copySample(template_set[pusher1][ran_tpl(ran)]);
+
+        // Pusher 2: random template of a different class
+        pusher2 = ran_obj(ran);
+        while (pusher2 == object || pusher2 == pusher0 || pusher2 == pusher1) pusher2 = ran_obj(ran);
+        triplet.pusher2.copySample(template_set[pusher2][ran_tpl(ran)]);
+
+        if (bootstrapping)
+        {
+            // Pusher 1: fill with missclassified nn
+            unsigned int knn_object = maxSimKNNTmpl[object][training_pose][0];
+            if (knn_object != object) {
+                triplet.pusher1.copySample(template_set[knn_object][ran_tpl(ran)]);
+            }
+
+            // Pusher 2: fill with missclassified 2nd nn
+            if (maxSimKNNTmpl[object][training_pose].size() > 2) {
+                knn_object = maxSimKNNTmpl[object][training_pose][2];
+                triplet.pusher2.copySample(template_set[knn_object][ran_tpl(ran)]);
+            }
+        }
+
+        // Fill random backgrounds
+        if (random_background != 0) {
+            db->randomFill(triplet.anchor.data, random_background);
+            db->randomFill(triplet.puller.data, random_background);
+            db->randomFill(triplet.pusher0.data, random_background);
+            db->randomFill(triplet.pusher1.data, random_background);
+            db->randomFill(triplet.pusher2.data, random_background);
+        }
+
+        // Store triplet to the batch
+        batch.push_back(triplet.anchor);
+        batch.push_back(triplet.puller);
+        batch.push_back(triplet.pusher0);
+        batch.push_back(triplet.pusher1);
+        batch.push_back(triplet.pusher2);
+
+#if 1   // Show triplets
+        showTriplet(triplet.anchor.data,triplet.puller.data,triplet.pusher0.data,triplet.pusher1.data,triplet.pusher2.data);
 #endif
 
     }

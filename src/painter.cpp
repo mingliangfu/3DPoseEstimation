@@ -143,8 +143,10 @@ void SingletonPainter::bindVBOs(vector<Vector3f> &vertex,vector<Vector3i> &faces
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR_MIPMAP_LINEAR);
 
-    glPixelStorei(GL_UNPACK_ALIGNMENT, (texture.step & 3) ? 1 : 4);
-    glPixelStorei(GL_UNPACK_ROW_LENGTH, texture.step/texture.elemSize());
+    if (!texture.empty()) {
+        glPixelStorei(GL_UNPACK_ALIGNMENT, (texture.step & 3) ? 1 : 4);
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, texture.step/texture.elemSize());
+    }
 
     glTexImage2D(GL_TEXTURE_2D,     // Type of texture
                    0,                 // Pyramid level (for mip-mapping) - 0 is the top level
@@ -294,7 +296,7 @@ void CoordinateSystem::paint(void)
 /***************************************************************************/
 BoundingBox::BoundingBox(Matrix<float,3,8> &in_bb): m_bb(in_bb)
 {
-    m_indices = {0, 1, 2, 3,4, 5, 6, 7,0, 4, 1, 5, 2, 6, 3, 7};
+    m_indices = {0, 1, 2, 3, 4, 5, 6, 7,0, 4, 1, 5, 2, 6, 3, 7};
 }
 /***************************************************************************/
 void BoundingBox::paint(void)

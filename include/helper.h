@@ -3,6 +3,7 @@
 #include <iostream>
 #include <iomanip>
 #include <fstream>
+#include <stack>
 
 #include <Eigen/Geometry>
 
@@ -60,5 +61,8 @@ Mat showTriplet(const Mat &p0,const Mat &p1,const Mat &p2,const Mat &p3,const Ma
 void depth2normals(const Mat &depth, Mat &normals, float fx, float fy, float ox, float oy);
 inline void depth2normals(const Mat &depth, Mat &normals, Matrix3f &cam)
 {depth2normals(depth,normals,cam(0,0),cam(1,1),cam(0,2),cam(1,2));}
+
+// Region growing
+Mat growForeground(Mat &depth);
 
 }
