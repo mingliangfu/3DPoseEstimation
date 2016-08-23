@@ -363,8 +363,9 @@ void datasetManager::loadLinemodHardNegatives()
     {
         string file = hdf5_path + "negs_" + s + ".h5";
         if (!boost::filesystem::exists(file))
-            throw runtime_error(file + " not found!");
-        hard_negatives[s] = h5.read(file);
+            //throw runtime_error(file + " not found!");
+            cerr << file + " not found!" << endl;
+        else hard_negatives[s] = h5.read(file);
     }
 }
 
