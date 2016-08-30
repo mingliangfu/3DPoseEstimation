@@ -348,7 +348,7 @@ void networkEvaluator::saveConfusionMatrix(caffe::Net<float> &CNN, datasetManage
         // -- fill template backgrounds
         vector<vector<Sample>> template_set_rb(template_set.size(), vector<Sample>(template_set[0].size()));
         for (size_t object = 0; object < template_set.size(); ++object) {
-            for (size_t pose = 0; pose < template_set.size(); ++pose) {
+            for (size_t pose = 0; pose < template_set[0].size(); ++pose) {
                 template_set_rb[object][pose].copySample(template_set[object][pose]);
                 db.randomFill(template_set_rb[object][pose].data, random_background);
             }
@@ -404,7 +404,7 @@ void networkEvaluator::saveLog(caffe::Net<float> &CNN, datasetManager &db, strin
         // -- fill template backgrounds
         vector<vector<Sample>> template_set_rb(template_set.size(), vector<Sample>(template_set[0].size()));
         for (size_t object = 0; object < template_set.size(); ++object) {
-            for (size_t pose = 0; pose < template_set.size(); ++pose) {
+            for (size_t pose = 0; pose < template_set[0].size(); ++pose) {
                 template_set_rb[object][pose].copySample(template_set[object][pose]);
                 db.randomFill(template_set_rb[object][pose].data, random_background);
             }
