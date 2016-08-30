@@ -62,6 +62,17 @@ void depth2normals(const Mat &depth, Mat &normals, float fx, float fy, float ox,
 inline void depth2normals(const Mat &depth, Mat &normals, Matrix3f &cam)
 {depth2normals(depth,normals,cam(0,0),cam(1,1),cam(0,2),cam(1,2));}
 
+// Depth -> Cloud
+void     depth2cloud(const Mat &depth, Mat &cloud, float fx, float fy, float ox, float oy);
+inline Vector3f depth2cloud(Point p, float d, float fx, float fy, float ox, float oy)
+{return Vector3f(d*(p.x-ox)/fx,d*(p.y-oy)/fy,d);}
+
+inline void depth2cloud(const Mat &depth, Mat &cloud, Matrix3f &cam)
+{depth2cloud(depth,cloud,cam(0,0),cam(1,1),cam(0,2),cam(1,2));}
+
+inline Vector3f depth2cloud(Point p, float d, Matrix3f &cam)
+{return depth2cloud(p,d,cam(0,0),cam(1,1),cam(0,2),cam(1,2));}
+
 // Region growing
 Mat growForeground(Mat &depth);
 

@@ -102,6 +102,32 @@ void depth2normals(const Mat &dep, Mat &nor,float fx, float fy, float ox, float 
     }
 }
 
+void depth2cloud(const Mat &depth, Mat &cloud, float fx, float fy, float ox, float oy)
+{
+    assert(depth.type() == CV_32FC1);
+
+    const float inv_fx = 1.0f/fx, inv_fy = 1.0f/fy;
+
+    cloud = Mat::zeros(depth.size(),CV_32FC3);
+
+    // Pre-compute some constants
+    vector<float> x_cache(depth.cols);
+    for (int x = 0; x < depth.cols; ++x)
+        x_cache[x] = (x - ox) * inv_fx;
+
+    for (int y = 0; y < depth.rows; ++y)
+    {
+        float val_y = (y - oy) * inv_fy;
+        Vector3f *point = cloud.ptr<Vector3f>(y);
+        const float* zs = depth.ptr<float>(y);
+        for (int x = 0; x < depth.cols; ++x, ++point, ++zs)
+        {
+            float z = *zs;
+            (*point) << x_cache[x] * z, val_y * z,z;
+        }
+    }
+}
+
 Mat growForeground(Mat &depth)
 {
     auto check = [](float ref, float other)->bool
