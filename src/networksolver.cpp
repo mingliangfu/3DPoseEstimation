@@ -167,7 +167,7 @@ vector<Sample> networkSolver::buildBatch(int batch_size, unsigned int triplet_si
         batch.push_back(triplet.pusher1);
         batch.push_back(triplet.pusher2);
 
-#if 1   // Show triplets
+#if 0   // Show triplets
         showTriplet(triplet.anchor.data,triplet.puller.data,triplet.pusher0.data,triplet.pusher1.data,triplet.pusher2.data);
 #endif
 

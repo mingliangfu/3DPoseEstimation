@@ -24,7 +24,7 @@ int main(int argc, char *argv[])
     db.generateDatasets();
 
     // Initialize the solver
-    networkSolver solver(config, &db);
+    networkSolver solver(config, db);
 
     // Train the network
     solver.trainNet(0,true);
