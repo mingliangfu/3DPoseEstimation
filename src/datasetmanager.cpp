@@ -67,17 +67,6 @@ Benchmark datasetManager::loadBigbirdBenchmark(string bigbird_path, string seque
         cout << "Could not open data in " << dir_string << ". Aborting..." << endl;
         return Benchmark();
     }
-    int last=0;
-    filesystem::directory_iterator end_iter;
-    for(filesystem::directory_iterator dir_iter(dir); dir_iter != end_iter ; ++dir_iter)
-        if (filesystem::is_regular_file(dir_iter->status()) )
-        {
-            string file = dir_iter->path().leaf().string();
-            if (file.substr(0,4)=="NP1_")
-                last = std::max(last,std::stoi(file.substr(4,file.length())));
-        }
-
-    if (count > -1) last = count;
 
     Benchmark bench;
 
@@ -88,17 +77,26 @@ Benchmark datasetManager::loadBigbirdBenchmark(string bigbird_path, string seque
     vector<Isometry3f,Eigen::aligned_allocator<Isometry3f>> trans = h5.readBBTrans(dir_string + "/calibration.h5");
 
     for (int np = 1 ; np <= 5; ++np) {
-        for (int i = 0; i <= last; i += 3)
+        for (int i = 0; i <= 357; i += 3)
         {
             Frame frame;
             frame.nr = i * np;
             frame.color = imread(dir_string + "/NP" + to_string(np) + "_" + to_string(i)+".jpg");
-            resize(frame.color, frame.color, Size(640,512)); // rescale to 640*512
+            // resize(frame.color, frame.color, frame.color.size());
             // imshow("ColorScaled: ", frame.color); waitKey();
-            frame.depth = Mat::zeros(frame.color.size(),CV_32F);
-            Mat demo = h5.readBBDepth(dir_string + "/NP" + to_string(np) + "_" + to_string(i) + ".h5");
-            resize(demo, demo, Size(576,432));
-            demo.copyTo(frame.depth(Rect(27, 35, demo.cols, demo.rows)));
+
+            frame.depth = imread(dir_string + "/NP" + to_string(np) + "_" + to_string(i)+".png", -1);
+            frame.depth.convertTo(frame.depth, CV_32F, 0.0001f);
+
+            // Filter depth
+             Mat depth_mini(frame.depth.size().height, frame.depth.size().width, CV_8UC1);
+             frame.depth.convertTo(depth_mini, CV_8UC1, 255.0);
+             resize(depth_mini, depth_mini, Size(), 0.2, 0.2);
+             cv::inpaint(depth_mini, (depth_mini == 0.0), depth_mini, 5.0, INPAINT_TELEA);
+             resize(depth_mini, depth_mini, frame.depth.size());
+             depth_mini.convertTo(depth_mini, CV_32FC1, 1./255.0);
+             depth_mini.copyTo(frame.depth, (frame.depth == 0));
+
             // imshow("Depth: ", frame.depth); waitKey();
             assert(!frame.color.empty() && !frame.depth.empty());
 
@@ -288,7 +286,7 @@ Mat datasetManager::samplePatchWithScale(Mat &color, Mat &depth, Mat &normals, i
     // Make a cut of metric size m
     float m;
     if (dataset_name == "LineMOD") {m = 0.2f;}
-    else if (dataset_name == "BigBIRD") {m = 0.25f;}
+    else if (dataset_name == "BigBIRD") {m = 0.2f;}
     else if (dataset_name == "Washington") {m = 0.2f;}
     else {m = 0.2f;}
     int screenW = fx * m/z;
