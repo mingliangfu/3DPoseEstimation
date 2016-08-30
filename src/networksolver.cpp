@@ -358,24 +358,12 @@ void networkSolver::trainNet(int resume_iter, bool threaded)
         // Do bootstraping
         int snapshot_iter = epoch_iter * num_epochs * (training_round + 1) + resume_iter;
         testCNN.ShareTrainedLayersWith(&(*net));
-
-        if (random_background != 0) {
-            vector<vector<Sample>> copy_tmpl(nr_objects, vector<Sample>(nr_template_poses));
-            for (size_t object = 0; object < nr_objects; ++object) {
-                for (size_t pose = 0; pose < nr_template_poses; ++pose) {
-                    copy_tmpl[object][pose].copySample(template_set[object][pose]);
-                    db->randomFill(copy_tmpl[object][pose].data, random_background);
-                }
-            }
-            eval::computeHistogram(testCNN, copy_tmpl, training_set, test_set, rotInv, config, snapshot_iter);
-            eval::computeHistogram(testCNN, template_set, training_set, test_set, rotInv, config, snapshot_iter);
-        } else {
-            eval::computeHistogram(testCNN, template_set, training_set, test_set, rotInv, config, snapshot_iter);
-        }
-
         computeKNN(testCNN);
         bootstrapping = true;
 
+        // Save log
+        eval::saveLog(testCNN, db, config, snapshot_iter);
+        eval::saveConfusionMatrix(testCNN, db, config);
     }
     solver.Snapshot();
     clog << "Training finished!" << endl;

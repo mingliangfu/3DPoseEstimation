@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iostream>
+#include <algorithm>
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
@@ -13,6 +14,7 @@
 
 #include "datatypes.h"
 #include "helper.h"
+#include "datasetmanager.h"
 
 using namespace std;
 using namespace cv;
@@ -26,12 +28,13 @@ public:
     networkEvaluator();
     static Mat computeDescriptors(caffe::Net<float> &CNN, vector<Sample> samples);
     static void computeKNNAccuracy(vector<vector<vector<int> > > &maxSimTmpl, vector<vector<vector<int> > > &maxSimKNNTmpl);
-    static void computeHistogram(caffe::Net<float> &CNN,
-                                 const vector<vector<Sample>> &templates,
-                                 const vector<vector<Sample>> &training_set,
-                                 const vector<vector<Sample>> &test_set,
-                                 vector<int> rotInv, string config, int iter);
-    static void visualizeManifold(caffe::Net<float> &CNN, const vector<vector<Sample> > &templates, int iter);
+    static vector<float> computeHistogram(caffe::Net<float> &CNN, const vector<vector<Sample> > &template_set, const vector<vector<Sample> > &test_set, vector<int> rotInv, vector<float> bins);
+    static vector<vector<float>> computeConfusionMatrix(caffe::Net<float> &CNN,
+                                                 const vector<vector<Sample>> &template_set,
+                                                 const vector<vector<Sample>> &test_set, vector<string> models, unordered_map<string, int> local_index);
+    static void saveLog(caffe::Net<float> &CNN, datasetManager &db, string config, int iter);
+    static void saveConfusionMatrix(caffe::Net<float> &CNN, datasetManager &db, string config);
+    static void computeManifold(caffe::Net<float> &CNN, const vector<vector<Sample> > &templates, int iter);
     static void visualizeKNN(caffe::Net<float> &CNN,
                              const vector<vector<Sample>> &test_set,
                              const vector<vector<Sample>> &templates);
