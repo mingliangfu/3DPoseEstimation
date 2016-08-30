@@ -2,8 +2,8 @@
 
 namespace sz {
 
-networkSolver::networkSolver(string config, datasetManager* db): db(db), template_set(db->getTemplateSet()), training_set(db->getTrainingSet()),
-    test_set(db->getTestSet()), maxSimTmpl(db->getMaxSimTmpl()), config(config)
+networkSolver::networkSolver(string config, datasetManager &db): db(db), template_set(db.getTemplateSet()), training_set(db.getTrainingSet()),
+    test_set(db.getTestSet()), maxSimTmpl(db.getMaxSimTmpl()), config(config)
 {
     // Read config parameters
     readParam(config);
@@ -57,7 +57,7 @@ vector<Sample> networkSolver::buildBatch(int batch_size, unsigned int triplet_si
     // Random generator for object selection and template selection
     std::uniform_int_distribution<size_t> ran_obj(0, nr_objects-1), ran_tpl(0, nr_template_poses-1);
 
-    unordered_map<string, vector<Sample> > hard_negs = db->getHardNegatives();
+    unordered_map<string, vector<Sample> > hard_negs = db.getHardNegatives();
 
     for (size_t linearId = iter * batch_size/triplet_size; linearId < (iter * batch_size/triplet_size) + batch_size/triplet_size; ++linearId) {
 
@@ -153,11 +153,11 @@ vector<Sample> networkSolver::buildBatch(int batch_size, unsigned int triplet_si
 
         // Fill random backgrounds
         if (random_background != 0) {
-            db->randomFill(triplet.anchor.data, random_background);
-            db->randomFill(triplet.puller.data, random_background);
-            db->randomFill(triplet.pusher0.data, random_background);
-            db->randomFill(triplet.pusher1.data, random_background);
-            db->randomFill(triplet.pusher2.data, random_background);
+            db.randomFill(triplet.anchor.data, random_background);
+            db.randomFill(triplet.puller.data, random_background);
+            db.randomFill(triplet.pusher0.data, random_background);
+            db.randomFill(triplet.pusher1.data, random_background);
+            db.randomFill(triplet.pusher2.data, random_background);
         }
 
         // Store triplet to the batch
@@ -230,11 +230,11 @@ vector<Sample> networkSolver::buildBatchClass(int batch_size, unsigned int tripl
 
         // Fill random backgrounds
         if (random_background != 0) {
-            db->randomFill(triplet.anchor.data, random_background);
-            db->randomFill(triplet.puller.data, random_background);
-            db->randomFill(triplet.pusher0.data, random_background);
-            db->randomFill(triplet.pusher1.data, random_background);
-            db->randomFill(triplet.pusher2.data, random_background);
+            db.randomFill(triplet.anchor.data, random_background);
+            db.randomFill(triplet.puller.data, random_background);
+            db.randomFill(triplet.pusher0.data, random_background);
+            db.randomFill(triplet.pusher1.data, random_background);
+            db.randomFill(triplet.pusher2.data, random_background);
         }
 
         // Store triplet to the batch

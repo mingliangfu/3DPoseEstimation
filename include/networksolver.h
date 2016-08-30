@@ -36,7 +36,7 @@ namespace sz { // For Wadim
 class networkSolver
 {
 public:
-    networkSolver(string config, datasetManager *db);
+    networkSolver(string config, datasetManager &db);
     void readParam(string config);
 
     void buildBatchQueue(size_t batch_size, size_t triplet_size, size_t epoch_iter,
@@ -62,7 +62,7 @@ public:
     std::mutex queue_mutex;
 
     // Const references to db objects
-    datasetManager *db;
+    datasetManager &db;
     const vector<vector<Sample>>& template_set, training_set, test_set;
     const vector<vector<vector<int>>>& maxSimTmpl;
 
