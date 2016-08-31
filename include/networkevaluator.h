@@ -28,10 +28,10 @@ public:
     networkEvaluator();
     static Mat computeDescriptors(caffe::Net<float> &CNN, vector<Sample> samples);
     static void computeKNNAccuracy(vector<vector<vector<int> > > &maxSimTmpl, vector<vector<vector<int> > > &maxSimKNNTmpl);
-    static vector<float> computeHistogram(caffe::Net<float> &CNN, const vector<vector<Sample> > &template_set, const vector<vector<Sample> > &test_set, vector<int> rotInv, vector<float> bins);
+    static vector<float> computeHistogram(caffe::Net<float> &CNN, const vector<vector<Sample> > &template_set, const vector<vector<Sample> > &test_set, vector<int> rotInv, vector<float> bins, int knn);
     static vector<vector<float>> computeConfusionMatrix(caffe::Net<float> &CNN,
                                                  const vector<vector<Sample>> &template_set,
-                                                 const vector<vector<Sample>> &test_set, vector<string> models, unordered_map<string, int> local_index);
+                                                 const vector<vector<Sample>> &test_set, vector<string> models, unordered_map<string, int> local_index, int knn);
     static void saveLog(caffe::Net<float> &CNN, datasetManager &db, string config, int iter);
     static void saveConfusionMatrix(caffe::Net<float> &CNN, datasetManager &db, string config);
     static void computeManifold(caffe::Net<float> &CNN, const vector<vector<Sample> > &templates, int iter);

@@ -349,7 +349,6 @@ void networkSolver::trainNet(int resume_iter, bool threaded)
                     }
                 }
 
-
                 input_data_layer->set_cpu_data(batch_caffe.data());
                 solver.Step(1);
             }
@@ -405,8 +404,6 @@ void networkSolver::binarizeNet(int resume_iter)
     const int slice = input_data_layer->height()*input_data_layer->width();
     const int img_size = slice*channels;
     vector<float> data(batch_size*img_size,0);
-
-
 
     vector<Sample> batch;
     unsigned int triplet_size = 5;

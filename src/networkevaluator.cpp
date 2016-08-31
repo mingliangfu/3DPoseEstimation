@@ -177,7 +177,7 @@ void networkEvaluator::computeKNNAccuracy(vector<vector<vector<int>>> &maxSimTmp
 
 vector<vector<float>> networkEvaluator::computeConfusionMatrix(caffe::Net<float> &CNN,
                                              const vector<vector<Sample>> &template_set,
-                                             const vector<vector<Sample>> &test_set, vector<string> models, unordered_map<string, int> local_index)
+                                             const vector<vector<Sample>> &test_set, vector<string> models, unordered_map<string, int> local_index, int knn)
 {
     // Get the test data
     Mat DBfeats, DBtest;
@@ -194,7 +194,6 @@ vector<vector<float>> networkEvaluator::computeConfusionMatrix(caffe::Net<float>
     vector< vector<DMatch> > matches;
     matcher = DescriptorMatcher::create("BruteForce");
     matcher->add(DBfeats);
-    int knn = 1;
     matcher->knnMatch(DBtest, matches, knn);
 
     vector<vector<float>> conf_matrix(local_index.size(), vector<float>(local_index.size(), 0.0f));
@@ -209,16 +208,34 @@ vector<vector<float>> networkEvaluator::computeConfusionMatrix(caffe::Net<float>
         {
             int knn_object =  matches[linearId][nn].trainIdx / nr_tmpl_poses;
             int knn_pose =  matches[linearId][nn].trainIdx % nr_tmpl_poses;
+
+            if (test_set[query_object][query_pose].label.at<float>(0,0) == template_set[knn_object][knn_pose].label.at<float>(0,0))
+            {
+                // -- fill confusion matrix
+                int local_query_label = local_index[models[test_set[query_object][query_pose].label.at<float>(0,0)]];
+                int local_knn_label = local_index[models[template_set[knn_object][knn_pose].label.at<float>(0,0)]];
+                conf_matrix[local_query_label][local_knn_label]++;
+                break;
+            }
+
+            // - if occurance of the same class is not found among kNNs fill in the first one
+            if (nn == knn-1)
+            {
+                // -- get the 1st nn
+                knn_object =  matches[linearId][0].trainIdx / nr_tmpl_poses;
+                knn_pose =  matches[linearId][0].trainIdx % nr_tmpl_poses;
+                // -- fill confusion matrix
+                int local_query_label = local_index[models[test_set[query_object][query_pose].label.at<float>(0,0)]];
+                int local_knn_label = local_index[models[template_set[knn_object][knn_pose].label.at<float>(0,0)]];
+                conf_matrix[local_query_label][local_knn_label]++;
+            }
 #if 0
             imshow("query",showRGBDPatch(test_set[query_object][query_pose].data,false));
             imshow("KNN",showRGBDPatch(template_set[knn_object][knn_pose].data,false));
             waitKey();
 #endif
-            // Fill confusion matrix
-            int local_query_label = local_index[models[test_set[query_object][query_pose].label.at<float>(0,0)]];
-            int local_knn_label = local_index[models[template_set[knn_object][knn_pose].label.at<float>(0,0)]];
-            conf_matrix[local_query_label][local_knn_label]++;
         }
+
     }
 
     // Normalize
@@ -230,7 +247,7 @@ vector<vector<float>> networkEvaluator::computeConfusionMatrix(caffe::Net<float>
 
 vector<float> networkEvaluator::computeHistogram(caffe::Net<float> &CNN,
                                         const vector<vector<Sample>> &template_set,
-                                        const vector<vector<Sample>> &test_set, vector<int> rotInv, vector<float> bins)
+                                        const vector<vector<Sample>> &test_set, vector<int> rotInv, vector<float> bins, int knn)
 {
     // Get the test data
      Mat DBfeats, DBtest;
@@ -247,7 +264,6 @@ vector<float> networkEvaluator::computeHistogram(caffe::Net<float> &CNN,
      vector< vector<DMatch> > matches;
      matcher = DescriptorMatcher::create("BruteForce");
      matcher->add(DBfeats);
-     int knn = 1;
      matcher->knnMatch(DBtest, matches, knn);
 
      vector<float> histo(bins.size(), 0);
@@ -259,65 +275,79 @@ vector<float> networkEvaluator::computeHistogram(caffe::Net<float> &CNN,
          // - get the test set indices (1D -> 2D)
          int query_object = linearId / nr_test_poses;
          int query_pose = linearId % nr_test_poses;
+         Quaternionf query_quat = test_set[query_object][query_pose].getQuat();
 
+         // - loop through nns and choose the best one
+         float best_dist = numeric_limits<float>::max();
+         int best_knn_object = -1, best_knn_pose;
          for (int nn = 0; nn < knn; nn++)
          {
              int knn_object =  matches[linearId][nn].trainIdx / nr_tmpl_poses;
              int knn_pose =  matches[linearId][nn].trainIdx % nr_tmpl_poses;
-#if 0
-             imshow("query",showRGBDPatch(test_set[query_object][query_pose].data,false));
-             imshow("KNN",showRGBDPatch(template_set[knn_object][knn_pose].data,false));
-             waitKey();
-#endif
 
-             // If objects are different fill the first bin
-             if (test_set[query_object][query_pose].label.at<float>(0,0) != template_set[knn_object][knn_pose].label.at<float>(0,0))
-             { histo[0]++; continue; }
+             if (test_set[query_object][query_pose].label.at<float>(0,0) == template_set[knn_object][knn_pose].label.at<float>(0,0))
+             {
+                 // Get the quaternions
+                 Quaternionf knn_quat = template_set[knn_object][knn_pose].getQuat();
 
-             // Get the quaternions
-             Quaternionf query_quat = test_set[query_object][query_pose].getQuat();
-             Quaternionf knn_quat = template_set[knn_object][knn_pose].getQuat();
-
-             // Angular difference
-             float diff;
-             // If object is normal compare angular distance, else elevation level
-             if(rotInv[test_set[query_object][query_pose].label.at<float>(0,0)] == 0) {
-                 diff = query_quat.angularDistance(knn_quat)*180.f/M_PI;
-             } else {
-                 diff = abs(acos(query_quat.toRotationMatrix()(2,2)) - acos(knn_quat.toRotationMatrix()(2,2)))*180.f/M_PI;
-                 if(isnan(diff)) diff = 0;
-             }
-             mean_angle += diff;
-             diff_vector.push_back(diff);
-
-             // Exact match?
-             Quaternionf tmpl_quat;
-             bool exact_match = true;
-             for (int tmpl_pose = 0; tmpl_pose < nr_tmpl_poses; ++tmpl_pose) {
-                 for (int q = 0; q < 4; ++q)
-                     tmpl_quat.coeffs()(q) = template_set[knn_object][tmpl_pose].label.at<float>(0,1+q);
-                 if (query_quat.angularDistance(tmpl_quat) < query_quat.angularDistance(knn_quat))
-                     exact_match = false;
-             }
-             if (exact_match) histo[1]++;
-
-             for (size_t b = 2; b < bins.size(); ++b) {
-                 if (diff < bins[b])
-                 {
-                     histo[b]++;
+                 // Angular difference
+                 float knn_dist;
+                 // If object is normal compare angular distance, else elevation level
+                 if(rotInv[test_set[query_object][query_pose].label.at<float>(0,0)] == 0) {
+                     knn_dist = query_quat.angularDistance(knn_quat)*180.f/M_PI;
+                 } else {
+                     knn_dist = abs(acos(query_quat.toRotationMatrix()(2,2)) - acos(knn_quat.toRotationMatrix()(2,2)))*180.f/M_PI;
+                     if(isnan(knn_dist)) knn_dist = numeric_limits<float>::max();
                  }
+
+                 if (knn_dist >= best_dist) continue;
+                 best_dist = knn_dist;
+                 best_knn_object = knn_object;
+                 best_knn_pose = knn_pose;
              }
          }
+
+         // If objects are different fill the first bin
+         if (best_knn_object == -1) {
+             histo[0]++; continue;
+         }
+#if 0
+         imshow("query",showRGBDPatch(test_set[query_object][query_pose].data,false));
+         imshow("KNN",showRGBDPatch(template_set[best_knn_object][best_knn_pose].data,false));
+         waitKey();
+#endif
+
+         // Store the angular differences
+         mean_angle += best_dist;
+         diff_vector.push_back(best_dist);
+
+
+         // Exact match?
+         bool exact_match = true;
+         Quaternionf best_knn_quat = template_set[best_knn_object][best_knn_pose].getQuat();
+
+         for (auto tmpl_pose = 0; tmpl_pose < nr_tmpl_poses; ++tmpl_pose) {
+             Quaternionf tmpl_quat = template_set[best_knn_object][tmpl_pose].getQuat();
+             if (query_quat.angularDistance(tmpl_quat) < query_quat.angularDistance(best_knn_quat))
+                 exact_match = false;
+         }
+         if (exact_match) histo[1]++;
+
+         // Fill histogram angles
+         for (size_t b = 2; b < bins.size(); ++b)
+             if (best_dist < bins[b]) histo[b]++;
      }
+
+     // Normalize histogram values
+     float total = histo.front() + histo.back();
+     for (float &i : histo) i /= total;
 
      // Get mean angular difference
      mean_angle /= DBtest.rows;
+
      // Get median angular difference
      sort(diff_vector.begin(), diff_vector.end());
      median_angle = diff_vector[(diff_vector.size()-1)/2];
-
-     float total = histo.front() + histo.back();
-     for (float &i : histo) i /= total;
 
      histo.push_back(mean_angle);
      histo.push_back(median_angle);
@@ -331,8 +361,8 @@ void networkEvaluator::saveConfusionMatrix(caffe::Net<float> &CNN, datasetManage
     boost::property_tree::ptree pt;
     boost::property_tree::ini_parser::read_ini(config, pt);
 
-    // Compute confusion matrix
     // - read config parameters
+    int knn = pt.get<int>("output.kNN");
     int random_background = pt.get<int>("input.random_background");
     vector<string> models = to_array<string>(pt.get<string>("input.models"));
     vector<string> used_models = to_array<string>(pt.get<string>("input.used_models"));
@@ -354,10 +384,10 @@ void networkEvaluator::saveConfusionMatrix(caffe::Net<float> &CNN, datasetManage
             }
         }
         // -- compute histogram for test/train data
-        conf_matrix = computeConfusionMatrix(CNN, template_set_rb, test_set, models, local_index);
+        conf_matrix = computeConfusionMatrix(CNN, template_set_rb, test_set, models, local_index, knn);
     } else {
         // -- compute histogram for test/train data
-        conf_matrix = computeConfusionMatrix(CNN, template_set, db.getTrainingSet(), models, local_index);
+        conf_matrix = computeConfusionMatrix(CNN, template_set, db.getTrainingSet(), models, local_index, knn);
     }
 
     // Write stats to the file
@@ -389,7 +419,8 @@ void networkEvaluator::saveLog(caffe::Net<float> &CNN, datasetManager &db, strin
     boost::property_tree::ptree pt;
     boost::property_tree::ini_parser::read_ini(config, pt);
 
-    // Compute histograms
+    // - read config parameters
+    int knn = pt.get<int>("output.kNN");
     vector<int> rotInv = to_array<int>(pt.get<string>("input.rotInv"));
     int random_background = pt.get<int>("input.random_background");
 
@@ -410,12 +441,12 @@ void networkEvaluator::saveLog(caffe::Net<float> &CNN, datasetManager &db, strin
             }
         }
         // -- compute histogram for test/train data
-        test_hist = computeHistogram(CNN, template_set_rb, test_set, rotInv, bins);
-        train_hist = computeHistogram(CNN, template_set_rb, training_set, rotInv, bins);
+        test_hist = computeHistogram(CNN, template_set_rb, test_set, rotInv, bins, knn);
+        train_hist = computeHistogram(CNN, template_set_rb, training_set, rotInv, bins, knn);
     } else {
         // -- compute histogram for test/train data
-        test_hist = computeHistogram(CNN, template_set, test_set, rotInv, bins);
-        train_hist = computeHistogram(CNN, template_set, training_set, rotInv, bins);
+        test_hist = computeHistogram(CNN, template_set, test_set, rotInv, bins, knn);
+        train_hist = computeHistogram(CNN, template_set, training_set, rotInv, bins, knn);
     }
 
     // Write stats to the file
