@@ -89,13 +89,13 @@ Benchmark datasetManager::loadBigbirdBenchmark(string bigbird_path, string seque
             frame.depth.convertTo(frame.depth, CV_32F, 0.0001f);
 
             // Filter depth
-             Mat depth_mini(frame.depth.size().height, frame.depth.size().width, CV_8UC1);
-             frame.depth.convertTo(depth_mini, CV_8UC1, 255.0);
-             resize(depth_mini, depth_mini, Size(), 0.2, 0.2);
-             cv::inpaint(depth_mini, (depth_mini == 0.0), depth_mini, 5.0, INPAINT_TELEA);
-             resize(depth_mini, depth_mini, frame.depth.size());
-             depth_mini.convertTo(depth_mini, CV_32FC1, 1./255.0);
-             depth_mini.copyTo(frame.depth, (frame.depth == 0));
+            Mat depth_mini(frame.depth.size().height, frame.depth.size().width, CV_8UC1);
+            frame.depth.convertTo(depth_mini, CV_8UC1, 255.0);
+            resize(depth_mini, depth_mini, Size(), 0.2, 0.2);
+            cv::inpaint(depth_mini, (depth_mini == 0.0), depth_mini, 5.0, INPAINT_TELEA);
+            resize(depth_mini, depth_mini, frame.depth.size());
+            depth_mini.convertTo(depth_mini, CV_32FC1, 1./255.0);
+            depth_mini.copyTo(frame.depth, (frame.depth == 0));
 
             // imshow("Depth: ", frame.depth); waitKey();
             assert(!frame.color.empty() && !frame.depth.empty());
@@ -150,7 +150,7 @@ Benchmark datasetManager::loadWashingtonBenchmark(string washington_path, string
     return bench;
 }
 
-Benchmark datasetManager::loadBenjaminBenchmark(string benjamin_path, string sequence, int index)
+Benchmark datasetManager::loadBenjaminBenchmark(string benjamin_path, string sequence)
 {
     string dir_string = benjamin_path + sequence;
     cerr << "  - loading benchmark " << dir_string << endl;
@@ -161,7 +161,7 @@ Benchmark datasetManager::loadBenjaminBenchmark(string benjamin_path, string seq
         cout << "Could not open data in " << dir_string << ". Aborting..." << endl;
         return Benchmark();
     }
-    int last=0;
+
     Benchmark bench;
     filesystem::directory_iterator end_iter;
     for(filesystem::directory_iterator dir_iter(dir); dir_iter != end_iter ; ++dir_iter)
@@ -186,14 +186,8 @@ Benchmark datasetManager::loadBenjaminBenchmark(string benjamin_path, string seq
                     fileStream.read((char*)&m, sizeof(uint16_t));
                     int temprow = i / cols;
                     int tempcol = i % cols;
-                    frame.depth.at<float>(temprow, tempcol) = (float)m*0.0001f;
-                    if (m != 0) cout << (float)m*0.0001f << endl;
+                    frame.depth.at<float>(temprow, tempcol) = (float)m*0.001f;
                 }
-
-                frame.color.convertTo(frame.color,CV_32FC3, 1/255.f);
-
-                imshow("Color: ", frame.color);
-                imshow("Depth: ", frame.depth); waitKey();
 
                 // Add pose matrix
                 ifstream pose(dir_string + "/" + file.substr(0, file.find("_color.png")) + "_pose.txt");
@@ -204,6 +198,9 @@ Benchmark datasetManager::loadBenjaminBenchmark(string benjamin_path, string seq
                 for (int k=0; k < 4;k++)
                     for(int l=0; l < 4;l++)
                         pose >> frame.gt[0].second.matrix()(k,l);
+
+                Vector3f trans = Vector3f(0,0,1);
+                frame.gt[0].second.translation() = trans;
 
                 bench.frames.push_back(frame);
 
@@ -220,64 +217,82 @@ Benchmark datasetManager::loadBenjaminBenchmark(string benjamin_path, string seq
         return bench;
 }
 
-vector<Background> datasetManager::loadBackgrounds(string backgrounds_path, int count /*=-1*/)
+vector<Sample> datasetManager::extractSynthSamplesBenjamin(string benjamin_path, Matrix3f &cam, string sequence, int index)
 {
-    filesystem::path dir(backgrounds_path);
+    string dir_string = benjamin_path + sequence;
+
+    filesystem::path dir(dir_string);
     if (!(filesystem::exists(dir) && filesystem::is_directory(dir)))
     {
-        cout << "Could not open data in " << backgrounds_path << ". Aborting..." << endl;
-        return vector<Background>();
+        cout << "Could not open data in " << dir_string << ". Aborting..." << endl;
+        return vector<Sample>();
     }
-    int last=0;
+
+    vector<Sample> samples;
     filesystem::directory_iterator end_iter;
     for(filesystem::directory_iterator dir_iter(dir); dir_iter != end_iter ; ++dir_iter)
         if (filesystem::is_regular_file(dir_iter->status()) )
         {
+            Frame frame;
             string file = dir_iter->path().leaf().string();
-            if (file.substr(0,6)=="color_")
-                last = std::max(last,std::stoi(file.substr(6,file.length())));
+            if (file.find("_color.png")< file.size())
+            {
+                // Read color
+                frame.color = imread(dir_string + "/" + file);
+
+                // Read depth from binary
+                ifstream fileStream(dir_string + "/" + file.substr(0, file.find("_color.png")) + "_depth.raw", ios::binary);
+                uint16_t m, rows, cols;
+                fileStream.read((char*)&rows, sizeof(uint16_t));
+                fileStream.read((char*)&cols, sizeof(uint16_t));
+
+                frame.depth = Mat::zeros(rows, cols, CV_32FC1); //Matrix to store values
+
+                for (int i = 0; i < rows*cols; ++i) {
+                    fileStream.read((char*)&m, sizeof(uint16_t));
+                    int temprow = i / cols;
+                    int tempcol = i % cols;
+                    frame.depth.at<float>(temprow, tempcol) = (float)m*0.001f;
+                }
+
+                // Add pose matrix
+                ifstream pose(dir_string + "/" + file.substr(0, file.find("_color.png")) + "_pose.txt");
+                assert(pose.is_open());
+
+                frame.gt.push_back({sequence,Isometry3f::Identity()});
+
+                for (int k=0; k < 4;k++)
+                    for(int l=0; l < 4;l++)
+                        pose >> frame.gt[0].second.matrix()(k,l);
+
+                Vector3f trans = Vector3f(0,0,1);
+                frame.gt[0].second.translation() = trans;
+
+                // Generate sample
+                Vector3f centroid = frame.gt[0].second.translation();
+                Vector3f projCentroid = cam * centroid;
+                projCentroid /= projCentroid(2);
+
+                // Compute normals
+                depth2normals(frame.depth,frame.normals,cam);
+
+                Sample sample;
+                sample.data = samplePatchWithScale(frame.color,frame.depth,frame.normals,projCentroid(0),projCentroid(1),centroid(2),cam(0,0),cam(1,1));
+
+                // Build 5-dimensional label: model index + quaternion + translation
+                sample.label = Mat(1,8,CV_32F);
+                sample.label.at<float>(0,0) = index;
+                Quaternionf q(frame.gt[0].second.linear());
+                for (int i=0; i < 4; ++i)
+                    sample.label.at<float>(0,1+i) = q.coeffs()(i);
+                for (size_t tr = 0; tr < 3; ++tr)
+                    sample.label.at<float>(0,5+tr) = frame.gt[0].second.inverse().translation()(tr);
+
+                samples.push_back(sample);
+            }
         }
 
-    if (count>-1) last = count;
-
-    vector<Background> bgs;
-    for (int i = 0; i <= last; i++)
-    {
-        Background bg;
-        stringstream countf;
-        countf << setw(4) << setfill('0') << to_string(i);
-        bg.color = imread(backgrounds_path + "color_"  + countf.str() + ".png");
-        bg.depth = imread(backgrounds_path + "depth_" + countf.str() + ".png",-1);
-        assert(!bg.color.empty() && !bg.depth.empty());
-        bg.depth.convertTo(bg.depth,CV_32F,0.001f);   // Bring depth map into meters
-        // imshow("Color: ", bg.color);
-        // imshow("Depth: ", bg.depth); waitKey();
-
-        // Filter depth
-        Mat depth_mini(bg.depth.size().height, bg.depth.size().width, CV_8UC1);
-        bg.depth.convertTo(depth_mini, CV_8UC1, 255.0);
-        resize(depth_mini, depth_mini, Size(), 0.2, 0.2);
-        cv::inpaint(depth_mini, (depth_mini == 0.0), depth_mini, 5.0, INPAINT_TELEA);
-        resize(depth_mini, depth_mini, bg.depth.size());
-        depth_mini.convertTo(depth_mini, CV_32FC1, 1./255.0);
-        depth_mini.copyTo(bg.depth, (bg.depth == 0));
-        // medianBlur(bg.depth, bg.depth, 5);
-
-        // Add normals
-        depth2normals(bg.depth, bg.normals, 539, 539, 0, 0);
-        // imshow("Normals: ", abs(bg.normals)); waitKey();
-        // imshow("Depth: ", bg.depth); waitKey();
-
-        // Scale backgrounds down
-        Size bg_mini_size = bg.color.size()/3;
-        resize(bg.color,bg.color,bg_mini_size);   // Standard bilinear interpolation
-        resize(bg.normals,bg.normals,bg_mini_size);   // Standard bilinear interpolation
-        resize(bg.depth,bg.depth,bg_mini_size,0,0,INTER_NEAREST); // Nearest-neighbor interpolation for depth!!!
-
-        bgs.push_back(bg);
-        loadbar("Loading backgrounds: ",i,last);
-    }
-    return bgs;
+    return samples;
 }
 
 // Takes a color and depth frame and samples a normalized 4-channel patch at the given center position and z-scale
@@ -561,14 +576,19 @@ void datasetManager::generateAndStoreSamples(int sampling_type)
         // Synthetic data
         clog << "  - render synthetic data:" << endl;
         vector<Sample> templates, synth_samples;
-        if (sampling_type) {
-            int subdivTmpl = 2; // sphere subdivision factor for templates
-            templates = createSynthSamplesWadim(model, bench.cam, model_index[model_name], subdivTmpl);
-            synth_samples = createSynthSamplesWadim(model, bench.cam, model_index[model_name], subdivTmpl+1);
-        } else {
+        if (sampling_type == 0) {
             vector<Sample> temp = createSynthSamplesPaul(model, bench.cam, model_index[model_name]);
             templates.assign(temp.begin(),temp.begin() + 301);
             synth_samples.assign(temp.begin() + 302, temp.end());
+        } else if (sampling_type == 1) {
+            int subdivTmpl = 2; // sphere subdivision factor for templates
+            templates = createSynthSamplesWadim(model, bench.cam, model_index[model_name], subdivTmpl);
+            synth_samples = createSynthSamplesWadim(model, bench.cam, model_index[model_name], subdivTmpl+1);
+        } else if (sampling_type == 2) {
+            string simulated_templates_path = "/media/zsn/My Passport/Datasets/Benjamin/dataset_sergey_poses/";
+            string simulated_training_set_path = "/media/zsn/My Passport/Datasets/Benjamin/dataset_sergey_poses/";
+            templates = extractSynthSamplesBenjamin(simulated_templates_path, bench.cam, model_name, model_index[model_name]);
+            synth_samples = extractSynthSamplesBenjamin(simulated_training_set_path, bench.cam, model_name, model_index[model_name]);
         }
 
         // - store synthetic samples to HDF5 files
@@ -583,7 +603,8 @@ void datasetManager::generateAndStoreSamples(int sampling_type)
 void datasetManager::generateDatasets()
 {
     // Generate the hdf5 files if missing
-    generateAndStoreSamples(inplane);
+    if (use_simulated) generateAndStoreSamples(2);
+    else generateAndStoreSamples(inplane);
 
     // Clear the sets
     training_set.clear();
@@ -592,7 +613,7 @@ void datasetManager::generateDatasets()
 
     // Load backgrounds for further use
     if (random_background == 3 || random_background == -1)
-        backgrounds = loadBackgrounds(bg_path);
+        bg.loadBackgrounds(bg_path);
 
     for (string &seq : used_models)
     {
@@ -771,169 +792,11 @@ void datasetManager::randomFill(Mat &patch, int type)
     }
 
     switch(type) {
-        case 1: randomColorFill(patch); break;
-        case 2: randomShapeFill(patch); break;
-        case 3: randomRealFill(patch); break;
+        case 1: bg.randomColorFill(patch); break;
+        case 2: bg.randomShapeFill(patch); break;
+        case 3: bg.randomRealFill(patch); break;
+        case 4: bg.randomPerlinFill(patch); break;
     }
-}
-
-void datasetManager::randomColorFill(Mat &patch)
-{
-    int chans = patch.channels();
-    std::uniform_real_distribution<float> p(0.f,1.f);
-
-    vector<Mat> channels;
-    cv::split(patch,channels);
-
-    // Store the mask (dilated to kill render borders)
-    Mat mask = (channels[3] == 0);
-    cv::dilate(mask,mask,Mat());
-
-    for (int r=0; r < patch.rows; ++r)
-    {
-        float *row = patch.ptr<float>(r);
-        for (int c=0; c < patch.cols; ++c)
-        {
-            if (mask.at<uchar>(r,c))
-                for (int ch = 0; ch < 7; ++ch)
-                    row[c*chans + ch] =  p(ran);
-        }
-    }
-
-}
-
-void datasetManager::randomShapeFill(Mat &patch)
-{
-    Size patch_size(patch.size().width,patch.size().height);
-
-    // Split the patch
-    vector<Mat> channels;
-    cv::split(patch,channels);
-    Mat patch_rgb,patch_dep,patch_nor;
-    cv::merge(vector<Mat>({channels[0],channels[1],channels[2]}),patch_rgb);
-    cv::merge(vector<Mat>({channels[3]}),patch_dep);
-    cv::merge(vector<Mat>({channels[4],channels[5],channels[6]}),patch_nor);
-
-    float scale_size = 1.2;
-    // Store a copy and fill it with random shapes
-    Mat tmp_rgb = Mat::zeros(patch_size.width*scale_size, patch_size.height*scale_size, CV_32FC3);
-    Mat tmp_dep = Mat::zeros(patch_size.width*scale_size, patch_size.height*scale_size, CV_32F);
-    Mat tmp_nor = Mat::zeros(patch_size.width*scale_size, patch_size.height*scale_size, CV_32FC3);
-    Point center;
-
-    std::uniform_real_distribution<float> color(0.35f,0.7f);
-    std::uniform_real_distribution<float> s(0.0f,0.2f);
-    std::uniform_int_distribution<int> r(0,20);
-    std::vector<float> i{0, tmp_rgb.size().width/2-10.f, tmp_rgb.size().width/2+10.f, (float)tmp_rgb.size().width}; std::vector<float> w{1, 0, 0, 1};
-    std::piecewise_linear_distribution<> coord(i.begin(), i.end(), w.begin());
-    // std::uniform_int_distribution<int> coord(0,64);
-
-    // Fill base surface
-    float scale = s(ran);
-    rectangle(tmp_rgb, Point(0,0), Point(tmp_rgb.cols, tmp_rgb.rows), Scalar(color(ran),color(ran),color(ran)), -1, 8);
-    for (int y = 0; y < tmp_dep.size().height; ++y) {
-        for (int x = 0; x < tmp_dep.size().width; ++x) {
-             tmp_dep.at<float>(x,y) = 0.5 + scale * (float)x/(tmp_dep.size().width);
-         }
-     }
-
-    // Fill circles
-    for (int i = 0; i < 20; i++) {
-      center.x = coord(ran);
-      center.y = coord(ran);
-      int rad = r(ran);
-      circle(tmp_rgb, center, rad, Scalar(color(ran),color(ran),color(ran)), -1, 8);
-      circle(tmp_dep, center, rad, Scalar(color(ran)), -1, 8);
-    }
-
-    // Adjust depth
-    float depth_scale = 0.6 / tmp_dep.at<float>(tmp_dep.size().width/2, tmp_dep.size().height/2);
-    tmp_dep *= depth_scale;
-    tmp_dep.setTo(1, tmp_dep > 1);
-
-    // Add noise
-    Mat tmp_noise = tmp_dep.clone();
-    randn(tmp_noise, 0.0f, 0.002f);
-    tmp_dep += tmp_noise;
-
-    depth2normals(tmp_dep, tmp_nor, 539, 539, 0, 0);
-
-    // medianBlur(tmp_rgb, tmp_rgb, 5);
-    // GaussianBlur(tmp_rgb, tmp_rgb, Size(5,5), 0, 0);
-
-    // Store the mask (dilated to kill render borders)
-    Mat mask = patch_dep == 0;
-    cv::dilate(mask,mask,Mat());
-
-    // Copy random shapes to the background of the patch
-    tmp_rgb(Rect((tmp_rgb.cols - patch_size.width)/2, (tmp_rgb.rows - patch_size.width)/2, patch_size.width, patch_size.height)).copyTo(patch_rgb,mask);
-    tmp_dep(Rect((tmp_dep.cols - patch_size.width)/2, (tmp_dep.cols - patch_size.width)/2, patch_size.width, patch_size.height)).copyTo(patch_dep,mask);
-    tmp_nor(Rect((tmp_nor.cols - patch_size.width)/2, (tmp_nor.cols - patch_size.width)/2, patch_size.width, patch_size.height)).copyTo(patch_nor,mask);
-    // cout << patch_dep << endl;
-
-    cv::merge(vector<Mat>{patch_rgb,patch_dep,patch_nor},patch);
-    // showRGBDPatch(patch, true);
-
-}
-
-void datasetManager::randomRealFill(Mat &patch)
-{
-    if (backgrounds.empty()) throw runtime_error("No backgrounds loaded!");
-
-    Size patch_size(patch.size().width,patch.size().height);
-    Size bg_size(backgrounds[0].color.size().width, backgrounds[0].color.size().height);
-    Mat tmp_rgb, tmp_dep, tmp_nor;
-
-    // Split the patch
-    vector<Mat> channels;
-    cv::split(patch,channels);
-    Mat patch_rgb,patch_dep,patch_nor;
-    cv::merge(vector<Mat>({channels[0],channels[1],channels[2]}),patch_rgb);
-    cv::merge(vector<Mat>({channels[3]}),patch_dep);
-    cv::merge(vector<Mat>({channels[4],channels[5],channels[6]}),patch_nor);
-
-    // Take random background
-    std::uniform_int_distribution<int> r_bg(1, backgrounds.size()-1);
-    std::uniform_int_distribution<int> r_x(patch_size.width/2, bg_size.width - patch_size.width/2);
-    std::uniform_int_distribution<int> r_y(patch_size.height/2, bg_size.height - patch_size.height/2);
-
-    // Find a center point
-    int bg = r_bg(ran), center_x = r_x(ran), center_y = r_y(ran);
-
-    // Check if image will be inside the bounds
-    while( isnan(backgrounds[bg].depth.at<float>(center_x, center_y))
-           || backgrounds[bg].depth.at<float>(center_x, center_y) < 0.4
-           || backgrounds[bg].depth.at<float>(center_x, center_y) > 20)
-        { bg = r_bg(ran), center_x = r_x(ran), center_y = r_y(ran); }
-
-    int tl_x, tl_y; // Estimate top left corner
-    tl_x = center_x - patch_size.width/2;
-    tl_y = center_y - patch_size.height/2;
-
-    backgrounds[bg].color(Rect(tl_x, tl_y, patch_size.width, patch_size.height)).copyTo(tmp_rgb);
-    backgrounds[bg].depth(Rect(tl_x, tl_y, patch_size.width, patch_size.height)).copyTo(tmp_dep);
-    backgrounds[bg].normals(Rect(tl_x, tl_y, patch_size.width, patch_size.height)).copyTo(tmp_nor);
-
-    // Store the mask (dilated to kill render borders)
-    Mat mask = patch_dep == 0;
-    cv::dilate(mask,mask,Mat());
-
-    // Adjust depth
-    float depth_scale = 0.6 / backgrounds[bg].depth.at<float>(center_x, center_y);
-    tmp_dep *= depth_scale;
-    tmp_dep.setTo(1, tmp_dep > 1);
-
-    // Fill backgrounds
-    tmp_rgb.convertTo(tmp_rgb, CV_32FC3, 1/255.f);
-    tmp_rgb.copyTo(patch_rgb,mask);
-    tmp_dep.copyTo(patch_dep,mask);
-    tmp_nor.copyTo(patch_nor,mask);
-
-    //medianBlur(patch_rgb, patch_rgb, 3);
-    //medianBlur(patch_nor, patch_nor, 3);
-
-    cv::merge(vector<Mat>{patch_rgb,patch_dep,patch_nor},patch);
-    // showRGBDPatch(patch, true);
 }
 
 datasetManager::datasetManager(string config)
@@ -944,6 +807,10 @@ datasetManager::datasetManager(string config)
     dataset_path = pt.get<string>("paths.dataset_path");
     hdf5_path = pt.get<string>("paths.hdf5_path");
     bg_path = pt.get<string>("paths.background_path");
+
+    use_simulated = pt.get<bool>("input.use_simulated");
+    simulated_templates_path = pt.get<string>("paths.simulated_templates_path");
+    simulated_templates_path = pt.get<string>("paths.simulated_training_path");
 
     dataset_name = pt.get<string>("input.dataset_name");
     random_background = pt.get<int>("input.random_background");

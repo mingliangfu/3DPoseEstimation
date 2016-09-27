@@ -74,8 +74,22 @@ vector<Sample> networkSolver::buildBatch(int batch_size, unsigned int triplet_si
         triplet.puller.copySample(template_set[object][puller]);
 
         // Pusher 0: second most similar template
-        pusher0 = maxSimTmpl[object][training_pose][1];
-        triplet.pusher0.copySample(template_set[object][pusher0]);
+        // pusher0 = maxSimTmpl[object][training_pose][1];
+        // triplet.pusher0.copySample(template_set[object][pusher0]);
+        if (rotInv[model_index[used_models[object]]] != 0)
+        {
+            // -- randomize until elevation levels of the puller and pusher 1 are different
+            pusher0 = ran_tpl(ran);
+            while(abs(acos(template_set[object][pusher0].getQuat().toRotationMatrix()(2,2)) - acos(template_set[object][puller].getQuat().toRotationMatrix()(2,2))) < 0.2)
+                pusher0 = ran_tpl(ran);
+            triplet.pusher0.copySample(template_set[object][pusher0]);
+
+            // - if model is normal
+        } else {
+            pusher0 = ran_tpl(ran);
+            while(pusher0 == puller) pusher0 = ran_tpl(ran);
+            triplet.pusher0.copySample(template_set[object][pusher0]);
+        }
 
         // OR:
         // If we have hard negatives for this model, put it
@@ -153,11 +167,7 @@ vector<Sample> networkSolver::buildBatch(int batch_size, unsigned int triplet_si
 
         // Fill random backgrounds
         if (random_background != 0) {
-            db.randomFill(triplet.anchor.data, random_background);
-            db.randomFill(triplet.puller.data, random_background);
-            db.randomFill(triplet.pusher0.data, random_background);
-            db.randomFill(triplet.pusher1.data, random_background);
-            db.randomFill(triplet.pusher2.data, random_background);
+           db.randomFill(triplet.anchor.data, random_background);
         }
 
         // Store triplet to the batch
@@ -231,10 +241,6 @@ vector<Sample> networkSolver::buildBatchClass(int batch_size, unsigned int tripl
         // Fill random backgrounds
         if (random_background != 0) {
             db.randomFill(triplet.anchor.data, random_background);
-            db.randomFill(triplet.puller.data, random_background);
-            db.randomFill(triplet.pusher0.data, random_background);
-            db.randomFill(triplet.pusher1.data, random_background);
-            db.randomFill(triplet.pusher2.data, random_background);
         }
 
         // Store triplet to the batch
@@ -244,7 +250,7 @@ vector<Sample> networkSolver::buildBatchClass(int batch_size, unsigned int tripl
         batch.push_back(triplet.pusher1);
         batch.push_back(triplet.pusher2);
 
-#if 1   // Show triplets
+#if 0   // Show triplets
         showTriplet(triplet.anchor.data,triplet.puller.data,triplet.pusher0.data,triplet.pusher1.data,triplet.pusher2.data);
 #endif
 

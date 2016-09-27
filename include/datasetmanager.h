@@ -22,6 +22,7 @@
 #include "datatypes.h"
 #include "hdf5handler.h"
 #include "helper.h"
+#include "bgfill.h"
 
 using namespace Eigen;
 using namespace std;
@@ -37,12 +38,13 @@ public:
     Benchmark loadLinemodBenchmark(string linemod_path, string sequence, int count=-1);
     Benchmark loadBigbirdBenchmark(string bigbird_path, string sequence, int count=-1);
     Benchmark loadWashingtonBenchmark(string washington_path, string sequence, int count=-1);
-    Benchmark loadBenjaminBenchmark(string benjamin_path, string sequence, int index);
+    Benchmark loadBenjaminBenchmark(string benjamin_path, string sequence);
     Mat samplePatchWithScale(Mat &color, Mat &depth, Mat &normals, int center_x, int center_y, float z, float fx, float fy);
     vector<Sample> extractRealSamplesPaul(vector<Frame> &frames, Matrix3f &cam, int index, Model &model);
     vector<Sample> extractRealSamplesWadim(vector<Frame> &frames, Matrix3f &cam, int index);
     vector<Sample> createSynthSamplesPaul(Model &model, Matrix3f &cam, int index);
     vector<Sample> createSynthSamplesWadim(Model &model, Matrix3f &cam, int index, int subdiv);
+    vector<Sample> extractSynthSamplesBenjamin(string benjamin_path, Matrix3f &cam, string sequence, int index);
 
 
     void loadLinemodHardNegatives();
@@ -52,10 +54,6 @@ public:
     void computeMaxSimTmplInplane();
     void computeMaxSimTmpl();
     void randomFill(Mat &patch, int type);
-    void randomColorFill(Mat &patch);
-    void randomShapeFill(Mat &patch);
-    vector<Background> loadBackgrounds(string backgrounds_path, int count=-1);
-    void randomRealFill(Mat &patch);
 
     // Helper methods
     const vector<vector<Sample>>& getTrainingSet() const {return training_set;}
@@ -76,16 +74,17 @@ private:
     vector<vector<vector<int>>> maxSimTmpl;
 
     string dataset_path, hdf5_path, bg_path, dataset_name;
+    string simulated_templates_path, simulated_test_set_path;
     vector<string> models, used_models;
     unordered_map<string,int> model_index;
     vector<int> rotInv;
-    bool inplane, use_real;
+    bool inplane, use_real, use_simulated;
     hdf5Handler h5;
-    vector<Background> backgrounds;
 
     unordered_map<string, vector<Sample> > hard_negatives;
 
     int random_background;
+    bgfill bg;
 
 };
 

@@ -36,7 +36,9 @@ SOURCES += main.cpp \
     src/networksolver.cpp \
     src/hdf5handler.cpp \
     src/networkevaluator.cpp \
-    src/helper.cpp
+    src/helper.cpp \
+    src/FastNoise.cpp \
+    src/bgfill.cpp
 
 HEADERS += include/sphere.h \
     include/painter.h \
@@ -45,4 +47,6 @@ HEADERS += include/sphere.h \
     include/datatypes.h \
     include/networksolver.h \
     include/hdf5handler.h \
-    include/helper.h
+    include/helper.h \
+    include/FastNoise.h \
+    include/bgfill.h
