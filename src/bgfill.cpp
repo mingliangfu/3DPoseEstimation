@@ -242,19 +242,31 @@ void bgfill::randomPerlinFill(Mat &patch)
 
     float scale_size = 1.2;
     // Store a copy and fill it with random shapes
-    // Mat tmp_rgb = Mat::zeros(patch_size.width*scale_size, patch_size.height*scale_size, CV_32FC3);
+    Mat tmp_rgb = Mat::zeros(patch_size.width*scale_size, patch_size.height*scale_size, CV_32FC3);
     Mat tmp_dep = Mat::zeros(patch_size.width*scale_size, patch_size.height*scale_size, CV_32F);
     Mat tmp_nor = Mat::zeros(patch_size.width*scale_size, patch_size.height*scale_size, CV_32FC3);
 
     FastNoise myNoise; // Create a FastNoise object
     myNoise.SetNoiseType(FastNoise::SimplexFractal); // Set the desired noise type
-    myNoise.SetFrequency(0.015);
+    myNoise.SetFrequency(0.01);
     myNoise.SetFractalGain(0.5);
 
-    // Fill the noise
+    // Fill the noise (all channels)
+    for (int c = 0; c < tmp_rgb.channels(); ++c) {
+        myNoise.SetSeed(0);
+        for (int y = 0; y < tmp_dep.rows; ++y) {
+            for (int x = 0; x < tmp_dep.cols; ++x) {
+                tmp_rgb.at<Vec3f>(x,y)[c] = myNoise.GetNoise(x,y) + 0.5f;
+                if (tmp_rgb.at<Vec3f>(x,y)[c] < 0) tmp_rgb.at<Vec3f>(x,y)[c] = 0;
+                if (tmp_rgb.at<Vec3f>(x,y)[c] > 1) tmp_rgb.at<Vec3f>(x,y)[c] = 1;
+            }
+        }
+    }
+
+    // Fill the depth noise
     for (int y = 0; y < tmp_dep.rows; ++y) {
         for (int x = 0; x < tmp_dep.cols; ++x) {
-            tmp_dep.at<float>(x,y) = myNoise.GetNoise(x,y)*0.5f + 1;
+            tmp_dep.at<float>(x,y) = myNoise.GetNoise(x,y) * 0.5f + 1;
         }
     }
 
@@ -264,6 +276,7 @@ void bgfill::randomPerlinFill(Mat &patch)
     tmp_dep.setTo(1, tmp_dep > 1);
     tmp_dep.setTo(0, tmp_dep < 0);
 
+    // Store the mask
     Mat mask = patch_dep == 0;
 
     // Get outline mask using morphological gradient
@@ -274,17 +287,18 @@ void bgfill::randomPerlinFill(Mat &patch)
 
     depth2normals(tmp_dep, tmp_nor, 539, 539, 0, 0);
 
-    // tmp_rgb(Rect((tmp_rgb.cols - patch_size.width)/2, (tmp_rgb.rows - patch_size.width)/2, patch_size.width, patch_size.height)).copyTo(patch_rgb,mask);
+    tmp_rgb(Rect((tmp_rgb.cols - patch_size.width)/2, (tmp_rgb.rows - patch_size.width)/2, patch_size.width, patch_size.height)).copyTo(patch_rgb,mask);
     tmp_dep(Rect((tmp_dep.cols - patch_size.width)/2, (tmp_dep.cols - patch_size.width)/2, patch_size.width, patch_size.height)).copyTo(patch_dep,mask);
     tmp_nor(Rect((tmp_nor.cols - patch_size.width)/2, (tmp_nor.cols - patch_size.width)/2, patch_size.width, patch_size.height)).copyTo(patch_nor,mask);
 
     // Smooth the edges
-    Mat blurred_nor;
+    Mat blurred_rgb, blurred_nor;
+    medianBlur(patch_rgb, blurred_rgb, 3);
     medianBlur(patch_nor, blurred_nor, 3);
+    blurred_rgb.copyTo(patch_rgb, outline);
     blurred_nor.copyTo(patch_nor, outline);
 
     cv::merge(vector<Mat>{patch_rgb,patch_dep,patch_nor},patch);
-    // showRGBDPatch(patch, true);
 
 //   imshow("opa", patch_dep); waitKey();
 }
