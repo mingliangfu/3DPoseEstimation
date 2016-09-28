@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <fstream>
 #include <stack>
+#include <chrono>
 
 #include <Eigen/Geometry>
 
@@ -18,6 +19,17 @@ using namespace std;
 using namespace cv;
 
 namespace sz {
+
+// StopWatch
+struct StopWatch
+{
+    chrono::high_resolution_clock::time_point start;
+    chrono::high_resolution_clock::time_point now(){return chrono::high_resolution_clock::now();}
+    StopWatch() : start(now()){}
+    inline float restart() {float el=elapsedMs(); start = now(); return el;}
+    inline float elapsedMs() {return 0.001f*chrono::duration_cast<chrono::microseconds>(now()-start).count();}
+    inline float elapsedS() {return chrono::duration_cast<chrono::seconds>(now()-start).count();}
+};
 
 // Show progress bar
 inline void loadbar(string label, unsigned int x, unsigned int n, unsigned int w = 20)
