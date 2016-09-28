@@ -32,7 +32,7 @@ Mat networkEvaluator::computeDescriptors(caffe::Net<float> &CNN, vector<Sample> 
             // Fill linear batch memory with input data in Caffe layout with channel-first
             for (size_t j=0; j < currIdxs.size(); ++j)
             {
-                Mat &patch = samples[currIdxs[j]].data;               
+                Mat &patch = samples[currIdxs[j]].data;
                 for (int h = 0; h < targetSize; ++h) {
                     const float* ptr = patch.ptr<float>(h);
                     for (int w = 0; w < targetSize; ++w)
@@ -374,21 +374,21 @@ void networkEvaluator::saveConfusionMatrix(caffe::Net<float> &CNN, datasetManage
     const vector<vector<Sample>>& test_set = db.getTestSet();
     vector<vector<float>> conf_matrix;
 
-    if (random_background != 0) {
-        // -- fill template backgrounds
-        vector<vector<Sample>> template_set_rb(template_set.size(), vector<Sample>(template_set[0].size()));
-        for (size_t object = 0; object < template_set.size(); ++object) {
-            for (size_t pose = 0; pose < template_set[0].size(); ++pose) {
-                template_set_rb[object][pose].copySample(template_set[object][pose]);
-                db.randomFill(template_set_rb[object][pose].data, random_background);
-            }
-        }
-        // -- compute histogram for test/train data
-        conf_matrix = computeConfusionMatrix(CNN, template_set_rb, test_set, models, local_index, knn);
-    } else {
+//    if (random_background != 0) {
+//        // -- fill template backgrounds
+//        vector<vector<Sample>> template_set_rb(template_set.size(), vector<Sample>(template_set[0].size()));
+//        for (size_t object = 0; object < template_set.size(); ++object) {
+//            for (size_t pose = 0; pose < template_set[0].size(); ++pose) {
+//                template_set_rb[object][pose].copySample(template_set[object][pose]);
+//                db.randomFill(template_set_rb[object][pose].data, random_background);
+//            }
+//        }
+//        // -- compute histogram for test/train data
+//        conf_matrix = computeConfusionMatrix(CNN, template_set_rb, test_set, models, local_index, knn);
+//    } else {
         // -- compute histogram for test/train data
         conf_matrix = computeConfusionMatrix(CNN, template_set, db.getTrainingSet(), models, local_index, knn);
-    }
+//    }
 
     // Write stats to the file
     // - read learning parameters
@@ -413,7 +413,7 @@ void networkEvaluator::saveConfusionMatrix(caffe::Net<float> &CNN, datasetManage
     log_file.close();
 }
 
-void networkEvaluator::saveLog(caffe::Net<float> &CNN, datasetManager &db, string config, int iter)
+void networkEvaluator::saveLog(caffe::Net<float> &CNN, datasetManager &db, string config, int iter, float time)
 {
     // Initialize the parser
     boost::property_tree::ptree pt;
@@ -431,23 +431,23 @@ void networkEvaluator::saveLog(caffe::Net<float> &CNN, datasetManager &db, strin
     vector<float> test_hist, train_hist;
     vector<float> bins = {-1, 0, 10, 20, 40, 180};
 
-    if (random_background != 0) {
-        // -- fill template backgrounds
-        vector<vector<Sample>> template_set_rb(template_set.size(), vector<Sample>(template_set[0].size()));
-        for (size_t object = 0; object < template_set.size(); ++object) {
-            for (size_t pose = 0; pose < template_set[0].size(); ++pose) {
-                template_set_rb[object][pose].copySample(template_set[object][pose]);
-                db.randomFill(template_set_rb[object][pose].data, random_background);
-            }
-        }
-        // -- compute histogram for test/train data
-        test_hist = computeHistogram(CNN, template_set_rb, test_set, rotInv, bins, knn);
-        train_hist = computeHistogram(CNN, template_set_rb, training_set, rotInv, bins, knn);
-    } else {
+//    if (random_background != 0) {
+//        // -- fill template backgrounds
+//        vector<vector<Sample>> template_set_rb(template_set.size(), vector<Sample>(template_set[0].size()));
+//        for (size_t object = 0; object < template_set.size(); ++object) {
+//            for (size_t pose = 0; pose < template_set[0].size(); ++pose) {
+//                template_set_rb[object][pose].copySample(template_set[object][pose]);
+//                db.randomFill(template_set_rb[object][pose].data, random_background);
+//            }
+//        }
+//        // -- compute histogram for test/train data
+//        test_hist = computeHistogram(CNN, template_set_rb, test_set, rotInv, bins, knn);
+//        train_hist = computeHistogram(CNN, template_set_rb, training_set, rotInv, bins, knn);
+//    } else {
         // -- compute histogram for test/train data
         test_hist = computeHistogram(CNN, template_set, test_set, rotInv, bins, knn);
         train_hist = computeHistogram(CNN, template_set, training_set, rotInv, bins, knn);
-    }
+//    }
 
     // Write stats to the file
     // - read learning parameters
@@ -463,20 +463,20 @@ void networkEvaluator::saveLog(caffe::Net<float> &CNN, datasetManager &db, strin
     // - print the header (once)
     if (log_file_check.peek() == std::fstream::traits_type::eof())
     {
-        log_file << "mod" << "\t" << "iter" << "\t" << "epoch" << "\t";
+        log_file << "mod" << "\t" << "iter" << "\t" << "epoch" << "\t" << "time" << "\t";
         for (size_t i = 0; i < bins.size(); ++i)
             log_file << "<" << bins[i] << "\t";
         log_file << "mean" << "\t" << "median" << endl;
     }
 
     // - print the stats - test
-    log_file << "test" << "\t" << iter << "\t" << epoch << "\t";
+    log_file << "test" << "\t" << iter << "\t" << epoch << "\t" << time << "\t";
     for (size_t i = 0; i < bins.size(); ++i)
         log_file << std::setprecision(3) << test_hist[i]*100 << "\t";
     log_file << test_hist[test_hist.size()-2] << "\t" << test_hist.back() << endl;
 
     // - print the stats - train
-    log_file << "train" << "\t" << iter << "\t" << epoch << "\t";
+    log_file << "train" << "\t" << iter << "\t" << epoch << "\t" << time << "\t";
     for (size_t i = 0; i < bins.size(); ++i)
         log_file << std::setprecision(3) << train_hist[i]*100 << "\t";
     log_file << train_hist[train_hist.size()-2] << "\t" << train_hist.back() << endl;

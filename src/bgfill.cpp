@@ -299,8 +299,6 @@ void bgfill::randomPerlinFill(Mat &patch)
     blurred_nor.copyTo(patch_nor, outline);
 
     cv::merge(vector<Mat>{patch_rgb,patch_dep,patch_nor},patch);
-
-//   imshow("opa", patch_dep); waitKey();
 }
 
 }

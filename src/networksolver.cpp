@@ -308,6 +308,9 @@ void networkSolver::trainNet(int resume_iter, bool threaded)
     queue<vector<float>> batch_queue;
     vector<std::thread> threads;
 
+    // Initialize the timer
+    StopWatch sw;
+
     if (threaded)
     {
         // Start threaded batch builders
@@ -367,7 +370,7 @@ void networkSolver::trainNet(int resume_iter, bool threaded)
         bootstrapping = true;
 
         // Save log
-        eval::saveLog(testCNN, db, config, snapshot_iter);
+        eval::saveLog(testCNN, db, config, snapshot_iter, sw.elapsedS());
         eval::saveConfusionMatrix(testCNN, db, config);
     }
     solver.Snapshot();
