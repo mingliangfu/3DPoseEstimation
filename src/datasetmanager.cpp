@@ -612,7 +612,7 @@ void datasetManager::generateDatasets()
     test_set.clear();
 
     // Load backgrounds for further use
-    if (random_background == 3 || random_background == -1)
+    if (random_background == 4 || random_background == -1)
         bg.loadBackgrounds(bg_path);
 
     for (string &seq : used_models)
