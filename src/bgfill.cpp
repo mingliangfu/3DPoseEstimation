@@ -64,6 +64,75 @@ void bgfill::loadBackgrounds(string backgrounds_path, int count /*=-1*/)
     backgrounds = bgs;
 }
 
+void bgfill::randomRealFill(Mat &patch)
+{
+    if (backgrounds.empty()) throw runtime_error("No backgrounds loaded!");
+
+    Size patch_size(patch.size().width,patch.size().height);
+    Size bg_size(backgrounds[0].color.size().width, backgrounds[0].color.size().height);
+    Mat tmp_rgb, tmp_dep, tmp_nor;
+
+    // Split the patch
+    vector<Mat> channels;
+    cv::split(patch,channels);
+    Mat patch_rgb,patch_dep,patch_nor;
+    cv::merge(vector<Mat>({channels[0],channels[1],channels[2]}),patch_rgb);
+    cv::merge(vector<Mat>({channels[3]}),patch_dep);
+    cv::merge(vector<Mat>({channels[4],channels[5],channels[6]}),patch_nor);
+
+    // Take random background
+    std::uniform_int_distribution<int> r_bg(1, backgrounds.size()-1);
+    std::uniform_int_distribution<int> r_x(patch_size.width/2, bg_size.width - patch_size.width/2);
+    std::uniform_int_distribution<int> r_y(patch_size.height/2, bg_size.height - patch_size.height/2);
+
+    // Find a center point
+    int bg = r_bg(ran), center_x = r_x(ran), center_y = r_y(ran);
+
+    // Check if image will be inside the bounds
+    while( isnan(backgrounds[bg].depth.at<float>(center_x, center_y))
+           || backgrounds[bg].depth.at<float>(center_x, center_y) < 0.4
+           || backgrounds[bg].depth.at<float>(center_x, center_y) > 20)
+        { bg = r_bg(ran), center_x = r_x(ran), center_y = r_y(ran); }
+
+    int tl_x, tl_y; // Estimate top left corner
+    tl_x = center_x - patch_size.width/2;
+    tl_y = center_y - patch_size.height/2;
+
+    backgrounds[bg].color(Rect(tl_x, tl_y, patch_size.width, patch_size.height)).copyTo(tmp_rgb);
+    backgrounds[bg].depth(Rect(tl_x, tl_y, patch_size.width, patch_size.height)).copyTo(tmp_dep);
+    backgrounds[bg].normals(Rect(tl_x, tl_y, patch_size.width, patch_size.height)).copyTo(tmp_nor);
+
+    // Store the mask (dilated to kill render borders)
+    Mat mask = patch_dep == 0;
+
+    // Get outline mask using morphological gradient
+    Mat dilate, erode;
+    cv::dilate(mask,dilate,Mat());
+    cv::erode(mask,erode,Mat());
+    Mat outline = dilate - erode;
+
+    // Adjust depth
+    float depth_scale = 0.6 / backgrounds[bg].depth.at<float>(center_x, center_y);
+    tmp_dep *= depth_scale;
+    tmp_dep.setTo(1, tmp_dep > 1);
+
+    // Fill backgrounds
+    tmp_dep.copyTo(patch_dep,mask);
+    tmp_nor.copyTo(patch_nor,mask);
+    tmp_rgb.convertTo(tmp_rgb, CV_32FC3, 1/255.f);
+    tmp_rgb.copyTo(patch_rgb,mask);
+
+    // Smooth the edges
+    Mat blurred_rgb, blurred_nor;
+    medianBlur(patch_rgb, blurred_rgb, 3);
+    medianBlur(patch_nor, blurred_nor, 3);
+    blurred_rgb.copyTo(patch_rgb, outline);
+    blurred_nor.copyTo(patch_nor, outline);
+
+    cv::merge(vector<Mat>{patch_rgb,patch_dep,patch_nor},patch);
+    // showRGBDPatch(patch, true);
+}
+
 void bgfill::randomColorFill(Mat &patch)
 {
     int chans = patch.channels();
@@ -159,76 +228,7 @@ void bgfill::randomShapeFill(Mat &patch)
 
 }
 
-void bgfill::randomRealFill(Mat &patch)
-{
-    if (backgrounds.empty()) throw runtime_error("No backgrounds loaded!");
-
-    Size patch_size(patch.size().width,patch.size().height);
-    Size bg_size(backgrounds[0].color.size().width, backgrounds[0].color.size().height);
-    Mat tmp_rgb, tmp_dep, tmp_nor;
-
-    // Split the patch
-    vector<Mat> channels;
-    cv::split(patch,channels);
-    Mat patch_rgb,patch_dep,patch_nor;
-    cv::merge(vector<Mat>({channels[0],channels[1],channels[2]}),patch_rgb);
-    cv::merge(vector<Mat>({channels[3]}),patch_dep);
-    cv::merge(vector<Mat>({channels[4],channels[5],channels[6]}),patch_nor);
-
-    // Take random background
-    std::uniform_int_distribution<int> r_bg(1, backgrounds.size()-1);
-    std::uniform_int_distribution<int> r_x(patch_size.width/2, bg_size.width - patch_size.width/2);
-    std::uniform_int_distribution<int> r_y(patch_size.height/2, bg_size.height - patch_size.height/2);
-
-    // Find a center point
-    int bg = r_bg(ran), center_x = r_x(ran), center_y = r_y(ran);
-
-    // Check if image will be inside the bounds
-    while( isnan(backgrounds[bg].depth.at<float>(center_x, center_y))
-           || backgrounds[bg].depth.at<float>(center_x, center_y) < 0.4
-           || backgrounds[bg].depth.at<float>(center_x, center_y) > 20)
-        { bg = r_bg(ran), center_x = r_x(ran), center_y = r_y(ran); }
-
-    int tl_x, tl_y; // Estimate top left corner
-    tl_x = center_x - patch_size.width/2;
-    tl_y = center_y - patch_size.height/2;
-
-    backgrounds[bg].color(Rect(tl_x, tl_y, patch_size.width, patch_size.height)).copyTo(tmp_rgb);
-    backgrounds[bg].depth(Rect(tl_x, tl_y, patch_size.width, patch_size.height)).copyTo(tmp_dep);
-    backgrounds[bg].normals(Rect(tl_x, tl_y, patch_size.width, patch_size.height)).copyTo(tmp_nor);
-
-    // Store the mask (dilated to kill render borders)
-    Mat mask = patch_dep == 0;
-
-    // Get outline mask using morphological gradient
-    Mat dilate, erode;
-    cv::dilate(mask,dilate,Mat());
-    cv::erode(mask,erode,Mat());
-    Mat outline = dilate - erode;
-
-    // Adjust depth
-    float depth_scale = 0.6 / backgrounds[bg].depth.at<float>(center_x, center_y);
-    tmp_dep *= depth_scale;
-    tmp_dep.setTo(1, tmp_dep > 1);
-
-    // Fill backgrounds
-    tmp_dep.copyTo(patch_dep,mask);
-    tmp_nor.copyTo(patch_nor,mask);
-    tmp_rgb.convertTo(tmp_rgb, CV_32FC3, 1/255.f);
-    tmp_rgb.copyTo(patch_rgb,mask);
-
-    // Smooth the edges
-    Mat blurred_rgb, blurred_nor;
-    medianBlur(patch_rgb, blurred_rgb, 3);
-    medianBlur(patch_nor, blurred_nor, 3);
-    blurred_rgb.copyTo(patch_rgb, outline);
-    blurred_nor.copyTo(patch_nor, outline);
-
-    cv::merge(vector<Mat>{patch_rgb,patch_dep,patch_nor},patch);
-    // showRGBDPatch(patch, true);
-}
-
-void bgfill::randomPerlinFill(Mat &patch)
+void bgfill::randomFractalFill(Mat &patch)
 {
     Size patch_size(patch.size().width,patch.size().height);
 

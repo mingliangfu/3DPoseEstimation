@@ -794,8 +794,8 @@ void datasetManager::randomFill(Mat &patch, int type)
     switch(type) {
         case 1: bg.randomColorFill(patch); break;
         case 2: bg.randomShapeFill(patch); break;
-        case 3: bg.randomRealFill(patch); break;
-        case 4: bg.randomPerlinFill(patch); break;
+        case 3: bg.randomFractalFill(patch); break;
+        case 4: bg.randomRealFill(patch); break;
     }
 }
 

@@ -23,10 +23,10 @@ class bgfill
 public:
     bgfill();
     void loadBackgrounds(string backgrounds_path, int count=-1);
+    void randomRealFill(Mat &patch);
     void randomColorFill(Mat &patch);
     void randomShapeFill(Mat &patch);
-    void randomRealFill(Mat &patch);
-    void randomPerlinFill(Mat &patch);
+    void randomFractalFill(Mat &patch);
 
 private:
     std::random_device ran;
