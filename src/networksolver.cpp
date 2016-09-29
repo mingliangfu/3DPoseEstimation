@@ -273,7 +273,6 @@ void networkSolver::trainNet(int resume_iter, bool threaded)
     solver_param.set_display(1);
     solver_param.set_net(network_path + net_name + ".prototxt");
 
-
     if (binarization){
         cerr << "Binarization!!" << endl;
         solver_param.set_snapshot_prefix(binarization_net_name);
@@ -322,7 +321,7 @@ void networkSolver::trainNet(int resume_iter, bool threaded)
     }
 
     // Perform training
-    for (size_t training_round = 0; training_round < num_training_rounds; ++training_round)
+    for (size_t training_round = 0; training_round < num_training_rounds + num_bootstrapping_rounds; ++training_round)
     {
         for (size_t epoch = 0; epoch < num_epochs; epoch++)
         {
@@ -361,20 +360,28 @@ void networkSolver::trainNet(int resume_iter, bool threaded)
                 input_data_layer->set_cpu_data(batch_caffe.data());
                 solver.Step(1);
             }
+
+            // Save log
+            if (epoch % log_epoch == 0)
+            {
+                testCNN.ShareTrainedLayersWith(&(*net));
+                int snapshot_iter = epoch_iter * num_epochs * (training_round + 1) + resume_iter;
+                eval::saveLog(testCNN, db, config, snapshot_iter, sw.elapsedS());
+                eval::saveConfusionMatrix(testCNN, db, config);
+            }
         }
 
         // Do bootstraping
-        int snapshot_iter = epoch_iter * num_epochs * (training_round + 1) + resume_iter;
-        testCNN.ShareTrainedLayersWith(&(*net));
-        computeKNN(testCNN);
-        bootstrapping = true;
-
-        // Save log
-        eval::saveLog(testCNN, db, config, snapshot_iter, sw.elapsedS());
-        eval::saveConfusionMatrix(testCNN, db, config);
+        if (training_round >= num_training_rounds)
+        {
+            testCNN.ShareTrainedLayersWith(&(*net));
+            computeKNN(testCNN);
+            bootstrapping = true;
+        }
     }
-    solver.Snapshot();
+
     clog << "Training finished!" << endl;
+    solver.Snapshot();
 
     // Detach all threads
     for(std::thread &t : threads)
@@ -473,8 +480,8 @@ void networkSolver::computeKNN(caffe::Net<float> &CNN)
 
         for (int nn = 0; nn < knn; nn++)
         {
-            int tmpl_object =  matches[linearId][nn].trainIdx / nr_template_poses;
-            int tmpl_pose =  matches[linearId][nn].trainIdx % nr_template_poses;
+            int tmpl_object = matches[linearId][nn].trainIdx / nr_template_poses;
+            int tmpl_pose = matches[linearId][nn].trainIdx % nr_template_poses;
 #if 0
             imshow("query",showRGBDPatch(training_set[query_object][query_pose].data,false));
             imshow("simKNN",showRGBDPatch(templates[tmpl_object][tmpl_pose].data,false));
@@ -521,6 +528,8 @@ void networkSolver::readParam(string config)
     rotInv = to_array<int>(pt.get<string>("input.rotInv"));
     inplane = pt.get<bool>("input.inplane");
     random_background = pt.get<int>("input.random_background");
+    num_bootstrapping_rounds = pt.get<int>("train.num_bootstrapping_rounds");
+    log_epoch = pt.get<int>("output.log_epoch");
 
     if (gpu) caffe::Caffe::set_mode(caffe::Caffe::GPU);
     used_models = to_array<string>(pt.get<string>("input.used_models"));

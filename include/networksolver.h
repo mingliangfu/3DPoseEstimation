@@ -69,7 +69,7 @@ public:
     // Config parameters
     bool bootstrapping;
     vector<string> used_models, models;
-    unsigned int num_epochs, num_training_rounds, binarization_epochs;
+    unsigned int num_epochs, binarization_epochs, num_training_rounds, num_bootstrapping_rounds, log_epoch;
     unsigned int step_size;
     string config, network_path, net_name, learning_policy, binarization_net_name;
     float learning_rate, momentum, weight_decay, gamma;
