@@ -1,5 +1,7 @@
 #pragma once
 
+#include <random>
+
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
@@ -7,7 +9,7 @@
 
 #include <boost/filesystem.hpp>
 
-#include <FastNoise.h>
+#include "FastNoise.h"
 
 #include "datatypes.h"
 #include "helper.h"
