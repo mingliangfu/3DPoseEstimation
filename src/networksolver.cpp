@@ -285,13 +285,6 @@ void networkSolver::trainNet(int resume_iter, bool threaded)
     // Store the test network
     caffe::Net<float> testCNN(network_path + net_name + ".prototxt", caffe::TEST);
 
-    if (resume_iter > 0) {
-        string resume_file = net_name + "_iter_" + to_string(resume_iter) + ".solverstate";
-        solver.Restore(resume_file.c_str());
-        computeKNN(testCNN);
-        bootstrapping = true;
-    }
-
     // Get network information
     boost::shared_ptr<caffe::Net<float> > net = solver.net();
     caffe::Blob<float>* input_data_layer = net->input_blobs()[0];
@@ -306,6 +299,15 @@ void networkSolver::trainNet(int resume_iter, bool threaded)
     vector<float> batch_caffe(batch_size * slice*channels,0);
     queue<vector<float>> batch_queue;
     vector<std::thread> threads;
+
+    // Restore the results if available
+    if (resume_iter > 0) {
+        string resume_file = net_name + "_iter_" + to_string(resume_iter) + ".solverstate";
+        solver.Restore(resume_file.c_str());
+        testCNN.ShareTrainedLayersWith(&(*net));
+        computeKNN(testCNN);
+        bootstrapping = true;
+    }
 
     // Initialize the timer
     StopWatch sw;
@@ -323,6 +325,14 @@ void networkSolver::trainNet(int resume_iter, bool threaded)
     // Perform training
     for (size_t training_round = 0; training_round < num_training_rounds + num_bootstrapping_rounds; ++training_round)
     {
+        // Do bootstraping?
+        if (training_round >= num_training_rounds)
+        {
+            testCNN.ShareTrainedLayersWith(&(*net));
+            computeKNN(testCNN);
+            bootstrapping = true;
+        }
+
         for (size_t epoch = 0; epoch < num_epochs; epoch++)
         {
             for (size_t iter = 0; iter < epoch_iter; iter++)
@@ -362,21 +372,12 @@ void networkSolver::trainNet(int resume_iter, bool threaded)
             }
 
             // Save log
-            if (epoch % log_epoch == 0)
+            if (((epoch+1) + training_round*num_epochs) % log_epoch == 0)
             {
                 testCNN.ShareTrainedLayersWith(&(*net));
-                int snapshot_iter = epoch_iter * num_epochs * (training_round + 1) + resume_iter;
-                eval::saveLog(testCNN, db, config, snapshot_iter, sw.elapsedS());
+                eval::saveLog(testCNN, db, config, solver.iter(), sw.elapsedS());
                 eval::saveConfusionMatrix(testCNN, db, config);
             }
-        }
-
-        // Do bootstraping
-        if (training_round >= num_training_rounds)
-        {
-            testCNN.ShareTrainedLayersWith(&(*net));
-            computeKNN(testCNN);
-            bootstrapping = true;
         }
     }
 
